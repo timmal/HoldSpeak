@@ -10,3 +10,4 @@ dist/
 *.dmg
 PushToTalk.xcodeproj/
 docs/superpowers/
+scripts/
