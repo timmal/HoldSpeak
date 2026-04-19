@@ -80,8 +80,6 @@ By default, presses shorter than **150 ms** don't start recording — the key be
   <img src="docs/screenshots/preferences-general.png" width="560" alt="Preferences · General" />
   <br /><br />
   <img src="docs/screenshots/preferences-audio.png" width="560" alt="Preferences · Audio" />
-  <br /><br />
-  <img src="docs/screenshots/preferences-support.png" width="560" alt="Preferences · Support" />
 </p>
 
 ### Auto language detection
