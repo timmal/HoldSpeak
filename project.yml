@@ -42,6 +42,8 @@ targets:
         optional: true
       - path: Resources/radio.svg
         buildPhase: resources
+      - path: Resources/settings.svg
+        buildPhase: resources
       - path: Resources/AppIcon.icns
         buildPhase: resources
     dependencies:

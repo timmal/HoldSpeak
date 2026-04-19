@@ -39,6 +39,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
+        PreferencesStore.shared.applyAppearance()
 
         do {
             store = try HistoryStore(url: HistoryStore.defaultURL())
@@ -69,8 +70,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
 
-        NotificationCenter.default.addObserver(forName: .openPreferences, object: nil, queue: .main) { [weak self] _ in
-            Task { @MainActor in self?.showPreferences() }
+        NotificationCenter.default.addObserver(forName: .openPreferences, object: nil, queue: .main) { [weak self] note in
+            let tab = (note.object as? String).flatMap(PrefsTab.init(rawValue:)) ?? .general
+            Task { @MainActor in self?.showPreferences(initialTab: tab) }
         }
 
         handlePermissionsAndStart()
@@ -100,22 +102,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         onboardingWin = win
     }
 
-    private func showPreferences() {
+    private func showPreferences(initialTab: PrefsTab = .general) {
         if prefsWin == nil { prefsWin = PreferencesWindowController() }
-        let view = PreferencesView(modelsVM: modelsVM) { [weak self] in
-            try? self?.store.clear()
-            self?.popoverVM.refresh()
-        }
+        let view = PreferencesView(
+            modelsVM: modelsVM,
+            historyStore: store,
+            onClearHistory: { [weak self] in
+                try? self?.store.clear()
+                self?.popoverVM.refresh()
+            },
+            initialTab: initialTab
+        )
         prefsWin?.present(view)
     }
 
     @ViewBuilder private func hudView() -> some View {
-        switch PreferencesStore.shared.hudContentMode {
-        case .waveformPill:
-            HUDPillView()
-        case .liveTranscript:
-            HUDTranscriptView(text: engine.partialText)
-        }
+        HUDPillView()
     }
 
     private func bind() {
@@ -146,15 +148,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
             .store(in: &cancellables)
 
-        engine.$partialText
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] _ in
-                guard let self else { return }
-                if PreferencesStore.shared.hudContentMode == .liveTranscript {
-                    self.overlay.update(AnyView(self.hudView()))
-                }
-            }
-            .store(in: &cancellables)
     }
 
     private func startRecording() {
@@ -178,12 +171,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         overlay.hide()
 
         Task { @MainActor in
-            let result = await engine.finalize()
+            let startNs = DispatchTime.now().uptimeNanoseconds
+            let result: (text: String, language: String?, durationMs: Int)?
+            if PreferencesStore.shared.fastInsert {
+                await engine.awaitStream(timeoutMs: 400)
+                let raw = engine.partialText
+                if !raw.isEmpty {
+                    result = (raw, nil, engine.currentDurationMs)
+                    pttLog("fast: used streaming partial (\(raw.count) chars)")
+                } else {
+                    pttLog("fast: partial empty, falling back to finalize")
+                    result = await engine.finalize()
+                }
+            } else {
+                result = await engine.finalize()
+            }
             guard let result = result else {
                 pttLog("finalize returned nil (model not loaded or empty audio)")
                 return
             }
-            pttLog("finalize raw: \"\(result.text)\" lang=\(result.language ?? "?") durMs=\(result.durationMs)")
+            let elapsedMs = (DispatchTime.now().uptimeNanoseconds - startNs) / 1_000_000
+            pttLog("result raw: \"\(result.text)\" lang=\(result.language ?? "?") durMs=\(result.durationMs) elapsedMs=\(elapsedMs)")
             let cleaned = TextCleaner.clean(result.text)
             pttLog("cleaned: \"\(cleaned)\"")
             guard !cleaned.isEmpty else { return }

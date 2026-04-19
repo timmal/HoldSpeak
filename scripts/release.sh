@@ -23,7 +23,10 @@ fi
 xcodegen generate >/dev/null
 
 pkill -x PushToTalk 2>/dev/null || true
-rm -rf build dist
+chmod -R u+w build dist 2>/dev/null || true
+rm -rf build dist 2>/dev/null || true
+rm -rf build dist 2>/dev/null || true
+mkdir -p build dist
 xcodebuild -scheme PushToTalk -configuration Release \
   -derivedDataPath build clean build 2>&1 | tail -5
 
@@ -67,3 +70,8 @@ gh release create "$TAG" "$DMG" \
 echo
 echo "Released $TAG"
 echo "DMG: $DMG"
+
+# Relaunch the installed app so the user isn't left without PushToTalk running
+if [[ -d /Applications/PushToTalk.app ]]; then
+  open /Applications/PushToTalk.app
+fi

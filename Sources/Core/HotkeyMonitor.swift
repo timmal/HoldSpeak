@@ -15,17 +15,23 @@ public final class HotkeyMonitor {
 
     public func start() {
         guard eventTap == nil else { return }
-        let mask = CGEventMask(1 << CGEventType.flagsChanged.rawValue)
+        let mask = CGEventMask(
+            (1 << CGEventType.flagsChanged.rawValue) |
+            (1 << CGEventType.keyDown.rawValue) |
+            (1 << CGEventType.keyUp.rawValue)
+        )
         let selfPtr = Unmanaged.passUnretained(self).toOpaque()
         let tap = CGEvent.tapCreate(
             tap: .cgSessionEventTap,
             place: .headInsertEventTap,
-            options: .listenOnly,
+            options: .defaultTap,
             eventsOfInterest: mask,
             callback: { _, type, event, userInfo in
                 guard let userInfo = userInfo else { return Unmanaged.passUnretained(event) }
                 let this = Unmanaged<HotkeyMonitor>.fromOpaque(userInfo).takeUnretainedValue()
-                this.handle(event: event, type: type)
+                if this.handle(event: event, type: type) {
+                    return nil
+                }
                 return Unmanaged.passUnretained(event)
             },
             userInfo: selfPtr
@@ -52,54 +58,66 @@ public final class HotkeyMonitor {
         isHolding = false
     }
 
-    // Device-dependent modifier flag bits (IOKit NX_DEVICE* constants, lower 16 bits)
-    private static let rightOptionDeviceBit: UInt64 = 0x40
-    private static let rightCmdDeviceBit: UInt64 = 0x10
-    // CGEventFlags general modifier bits that indicate a user-facing modifier is held
-    private static let generalShift:   UInt64 = 0x00020000
-    private static let generalControl: UInt64 = 0x00040000
-    private static let generalOption:  UInt64 = 0x00080000
-    private static let generalCommand: UInt64 = 0x00100000
-    private static let allGeneralModifiers: UInt64 =
-        generalShift | generalControl | generalOption | generalCommand
-
-    private func watchedDeviceBit() -> UInt64 {
-        prefs.hotkey == .rightOption ? Self.rightOptionDeviceBit : Self.rightCmdDeviceBit
+    /// Returns true if the event should be consumed (dropped).
+    private func handle(event: CGEvent, type: CGEventType) -> Bool {
+        let binding = prefs.hotkey
+        switch binding.kind {
+        case .modifier:
+            if type == .flagsChanged { handleModifier(event: event, binding: binding) }
+            return false
+        case .key:
+            return handleKey(event: event, type: type, binding: binding)
+        }
     }
 
-    private func watchedGeneralBit() -> UInt64 {
-        prefs.hotkey == .rightOption ? Self.generalOption : Self.generalCommand
-    }
-
-    private func handle(event: CGEvent, type: CGEventType) {
-        guard type == .flagsChanged else { return }
+    private func handleModifier(event: CGEvent, binding: HotkeyBinding) {
         let flags = event.flags.rawValue
-        let deviceBit = watchedDeviceBit()
-        let generalBit = watchedGeneralBit()
-        let ourKeyDown = (flags & deviceBit) != 0
-
-        // Reject only if a *different* general modifier is also held (chord collision avoidance).
-        let otherGeneralMods = flags & Self.allGeneralModifiers & ~generalBit
+        let ourKeyDown = (flags & binding.deviceBit) != 0
+        let otherGeneralMods = flags & HotkeyBinding.allGeneralMods & ~binding.mods
         if ourKeyDown && otherGeneralMods != 0 { return }
 
         if ourKeyDown && !isHolding {
-            pendingStartWork?.cancel()
-            let threshold = Double(prefs.holdThresholdMs) / 1000.0
-            let work = DispatchWorkItem { [weak self] in
-                guard let self else { return }
-                self.isHolding = true
-                self.events.send(.startHold)
-            }
-            pendingStartWork = work
-            DispatchQueue.main.asyncAfter(deadline: .now() + threshold, execute: work)
+            scheduleStart()
         } else if !ourKeyDown {
-            if isHolding {
-                isHolding = false
-                events.send(.endHold)
-            } else {
-                pendingStartWork?.cancel()
-                pendingStartWork = nil
-            }
+            endOrCancel()
+        }
+    }
+
+    private func handleKey(event: CGEvent, type: CGEventType, binding: HotkeyBinding) -> Bool {
+        guard type == .keyDown || type == .keyUp else { return false }
+        let kc = UInt16(event.getIntegerValueField(.keyboardEventKeycode))
+        guard kc == binding.keyCode else { return false }
+        let flags = event.flags.rawValue
+        let currentMods = flags & HotkeyBinding.allGeneralMods
+        if type == .keyDown {
+            guard currentMods == binding.mods else { return false }
+            if !isHolding && pendingStartWork == nil { scheduleStart() }
+            return true
+        } else {
+            endOrCancel()
+            return true
+        }
+    }
+
+    private func scheduleStart() {
+        pendingStartWork?.cancel()
+        let threshold = Double(prefs.holdThresholdMs) / 1000.0
+        let work = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            self.isHolding = true
+            self.events.send(.startHold)
+        }
+        pendingStartWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + threshold, execute: work)
+    }
+
+    private func endOrCancel() {
+        if isHolding {
+            isHolding = false
+            events.send(.endHold)
+        } else {
+            pendingStartWork?.cancel()
+            pendingStartWork = nil
         }
     }
 }

@@ -1,9 +1,13 @@
+<p align="center">
+  <img src="docs/screenshots/logo.webp" width="180" alt="Push-to-Talk logo" />
+</p>
+
 # Push-to-Talk
 
 Local push-to-talk dictation for macOS. Hold the hotkey, speak, release — recognized text is inserted into the focused input. No cloud: Whisper runs on GPU via WhisperKit.
 
 <p align="center">
-  <img src="docs/screenshots/popover.png" width="320" alt="Menu bar popover" />
+  <img src="docs/screenshots/popover.webp" width="320" alt="Menu bar popover" />
 </p>
 
 ## Features
@@ -77,9 +81,9 @@ By default, presses shorter than **150 ms** don't start recording — the key be
 - **Support** — donation address (USDT TRC-20)
 
 <p align="center">
-  <img src="docs/screenshots/preferences-general.png" width="560" alt="Preferences · General" />
+  <img src="docs/screenshots/preferences-general.webp" width="560" alt="Preferences · General" />
   <br /><br />
-  <img src="docs/screenshots/preferences-audio.png" width="560" alt="Preferences · Audio" />
+  <img src="docs/screenshots/preferences-audio.webp" width="560" alt="Preferences · Audio" />
 </p>
 
 ### Auto language detection

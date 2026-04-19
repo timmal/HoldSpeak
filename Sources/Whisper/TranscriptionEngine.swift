@@ -64,6 +64,16 @@ public final class TranscriptionEngine: ObservableObject {
         partialText = ""
     }
 
+    public var currentDurationMs: Int { Int(Double(accumulated.count) / 16.0) }
+
+    /// Wait until any in-flight streaming pass completes, capped by `timeoutMs`.
+    public func awaitStream(timeoutMs: Int) async {
+        let deadline = Date().addingTimeInterval(Double(timeoutMs) / 1000.0)
+        while streaming && Date() < deadline {
+            try? await Task.sleep(nanoseconds: 10_000_000)
+        }
+    }
+
     public func feed(_ buffer: AVAudioPCMBuffer) {
         guard let ch = buffer.floatChannelData?[0] else { return }
         let count = Int(buffer.frameLength)
@@ -126,7 +136,8 @@ public final class TranscriptionEngine: ObservableObject {
             language: override ?? PreferencesStore.shared.primaryLanguage.whisperCode,
             temperature: 0.0,
             skipSpecialTokens: true,
-            withoutTimestamps: true
+            withoutTimestamps: true,
+            suppressBlank: true
         )
     }
 }

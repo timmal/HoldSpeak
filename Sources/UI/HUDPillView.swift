@@ -32,15 +32,17 @@ struct HUDPillView: View {
             HStack(spacing: 2) {
                 ForEach(0..<model.bars.count, id: \.self) { i in
                     RoundedRectangle(cornerRadius: 1.5)
-                        .frame(width: 3, height: CGFloat(max(2, model.bars[i] * 30)))
+                        .frame(width: 3, height: CGFloat(max(2, model.bars[i] * 18)))
                         .foregroundColor(.white)
                 }
             }
+            .frame(height: 18)
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 10)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 6)
+        .frame(height: 30)
         .background(
-            RoundedRectangle(cornerRadius: 20)
+            RoundedRectangle(cornerRadius: 15)
                 .fill(Color.black)
         )
     }
