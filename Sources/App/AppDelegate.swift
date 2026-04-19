@@ -4,23 +4,6 @@ import Combine
 import SwiftUI
 @preconcurrency import UserNotifications
 
-func pttLog(_ msg: String) {
-    NSLog("[PTT] \(msg)")
-    let path = ("~/Library/Logs/PushToTalk.log" as NSString).expandingTildeInPath
-    let url = URL(fileURLWithPath: path)
-    let line = "\(Date()) \(msg)\n"
-    guard let data = line.data(using: .utf8) else { return }
-    if !FileManager.default.fileExists(atPath: path) {
-        try? data.write(to: url)
-        return
-    }
-    if let fh = try? FileHandle(forWritingTo: url) {
-        try? fh.seekToEnd()
-        try? fh.write(contentsOf: data)
-        try? fh.close()
-    }
-}
-
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var hotkey: HotkeyMonitor!
@@ -192,7 +175,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
             let elapsedMs = (DispatchTime.now().uptimeNanoseconds - startNs) / 1_000_000
             pttLog("result raw: \"\(result.text)\" lang=\(result.language ?? "?") durMs=\(result.durationMs) elapsedMs=\(elapsedMs)")
-            let cleaned = TextCleaner.clean(result.text)
+            let cleaned = TextCleaner.clean(result.text, terminology: TerminologyStore.shared.entries)
             pttLog("cleaned: \"\(cleaned)\"")
             guard !cleaned.isEmpty else { return }
             let wordCount = cleaned.split(whereSeparator: { $0.isWhitespace }).count

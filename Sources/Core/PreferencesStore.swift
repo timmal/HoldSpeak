@@ -128,7 +128,7 @@ public enum PrimaryLanguage: String, CaseIterable, Identifiable {
     public var label: String {
         switch self {
         case .auto: return "Auto-detect"
-        case .ru:   return "Russian (mixed en terms ok)"
+        case .ru:   return "Russian"
         case .en:   return "English"
         case .uk:   return "Ukrainian"
         case .es:   return "Spanish"

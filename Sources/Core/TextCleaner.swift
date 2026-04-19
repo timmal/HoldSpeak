@@ -42,7 +42,7 @@ public enum TextCleaner {
         "like and subscribe",
     ]
 
-    public static func clean(_ input: String) -> String {
+    public static func clean(_ input: String, terminology: [TerminologyEntry] = []) -> String {
         var s = input
         for rule in rules {
             guard let regex = try? NSRegularExpression(pattern: rule.pattern, options: rule.options) else { continue }
@@ -57,9 +57,26 @@ public enum TextCleaner {
         for h in hallucinations where lower.contains(h) {
             return ""
         }
+        s = canonicalize(s, terminology: terminology)
         // Capitalize first character (Unicode-safe)
         s = s.prefix(1).uppercased() + s.dropFirst()
         if let last = s.last, !".?!".contains(last) { s += "." }
+        return s
+    }
+
+    private static func canonicalize(_ input: String, terminology: [TerminologyEntry]) -> String {
+        var s = input
+        for entry in terminology {
+            for variant in entry.variants where !variant.isEmpty {
+                let escaped = NSRegularExpression.escapedPattern(for: variant)
+                let pattern = #"(?<![\p{L}\p{N}])"# + escaped + #"(?![\p{L}\p{N}])"#
+                let options: NSRegularExpression.Options = entry.caseSensitive ? [] : [.caseInsensitive]
+                guard let regex = try? NSRegularExpression(pattern: pattern, options: options) else { continue }
+                let range = NSRange(s.startIndex..., in: s)
+                let replacement = NSRegularExpression.escapedTemplate(for: entry.canonical)
+                s = regex.stringByReplacingMatches(in: s, range: range, withTemplate: replacement)
+            }
+        }
         return s
     }
 }

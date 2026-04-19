@@ -27,14 +27,15 @@ final class ModelsViewModel: ObservableObject {
 }
 
 enum PrefsTab: String, CaseIterable, Identifiable {
-    case general, audio, history, support
+    case general, audio, terminology, history, support
     var id: String { rawValue }
     var title: String {
         switch self {
-        case .general: return "General"
-        case .audio:   return "Audio"
-        case .history: return "History"
-        case .support: return "Support"
+        case .general:     return "General"
+        case .audio:       return "Audio"
+        case .terminology: return "Terms"
+        case .history:     return "History"
+        case .support:     return "Support"
         }
     }
 }
@@ -66,10 +67,11 @@ struct PreferencesView: View {
             ScrollView {
                 Group {
                     switch tab {
-                    case .general: generalTab
-                    case .audio:   audioTab
-                    case .history: historyTab
-                    case .support: supportTab
+                    case .general:     generalTab
+                    case .audio:       audioTab
+                    case .terminology: TerminologyPreferencesView()
+                    case .history:     historyTab
+                    case .support:     supportTab
                     }
                 }
                 .padding(.horizontal, 28)
