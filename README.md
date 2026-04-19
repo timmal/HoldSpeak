@@ -1,93 +1,93 @@
 # Push-to-Talk
 
-Локальная push-to-talk диктовка для macOS. Зажал хоткей → говоришь → отпустил → распознанный текст вставляется в активный инпут. Никаких облаков: Whisper крутится на GPU через WhisperKit.
+Local push-to-talk dictation for macOS. Hold the hotkey, speak, release — recognized text is inserted into the focused input. No cloud: Whisper runs on GPU via WhisperKit.
 
-## Фичи
+## Features
 
-- **Push-to-talk** на Right Option или Right Cmd (настраивается)
-- **Локальная транскрипция** через WhisperKit (CoreML, GPU)
-- **Код-свитч RU/EN/UK** и другие — в auto-режиме язык выбирается только из тех, что стоят в System Settings → Language & Region
-- **Вставка без буфера обмена** — через CGEventKeyboardSetUnicodeString, скипает поля с паролями
-- **Menu bar popover** с последними 10 транскрипциями (копируются кликом) и метриками: всего слов, WPM за 7 дней
-- **HUD-оверлей** пока держишь кнопку: чёрная пилюля с живым уровнем микрофона или live-transcript
-- **Лёгкая чистка текста** — убирает протяжные «эээээ/ммммм/ummm» и 3+ повторы подряд, ставит заглавную и точку
+- **Push-to-talk** on Right Option or Right Cmd (configurable)
+- **Local transcription** through WhisperKit (CoreML, GPU)
+- **Code-switching RU/EN/UK and more** — in auto mode the language is chosen only from the ones you have in System Settings → Language & Region
+- **Insertion without clipboard** — via `CGEventKeyboardSetUnicodeString`; password fields are skipped
+- **Menu bar popover** with the last 10 transcriptions (click to copy) and metrics: total words, 7-day avg WPM
+- **HUD overlay** while you hold the key: black pill with a live mic level or a live transcript
+- **Light text cleanup** — trims long "eeeeee / mmmmm / ummm", collapses 3+ consecutive repeats, capitalizes the first letter and adds a period
 
-## Установка
+## Install
 
-### Из исходников (рекомендуется)
+### From source (recommended)
 
-Требуется Xcode (CLI Tools недостаточно) и [XcodeGen](https://github.com/yonaskolb/XcodeGen).
+Requires Xcode (Command Line Tools alone are not enough) and [XcodeGen](https://github.com/yonaskolb/XcodeGen).
 
 ```bash
 git clone https://github.com/timmal/push-to-talk.git
 cd push-to-talk
 brew install xcodegen
-./scripts/setup-signing.sh    # один раз — создаёт self-signed cert, чтобы TCC-права не сбрасывались при каждой пересборке
-./scripts/rebuild.sh          # собирает и ставит в /Applications
+./scripts/setup-signing.sh    # run once — creates a persistent self-signed cert so TCC grants survive rebuilds
+./scripts/rebuild.sh          # builds and installs to /Applications
 ```
 
-При первом запуске выдай три разрешения:
+On first launch, grant three permissions:
 
-- **Microphone** — для захвата звука
-- **Accessibility** — для глобального хоткея и вставки текста
-- **Input Monitoring** — для Right Option / Right Cmd как push-to-talk
+- **Microphone** — for audio capture
+- **Accessibility** — for the global hotkey and text insertion
+- **Input Monitoring** — to use Right Option / Right Cmd as push-to-talk
 
-В онбординге есть кнопки Open… и Re-check.
+The onboarding window has Open… and Re-check buttons.
 
-### Модель
+### Model
 
-По умолчанию грузится **Turbo (large-v3 distilled, ~800 MB)** — лучший баланс качества и скорости. В Preferences → Audio можно выбрать Tiny или Small.
+The default is **Turbo (large-v3 distilled, ~800 MB)** — the best quality/speed trade-off. You can switch to Tiny or Small in Preferences → Audio.
 
-Если у тебя уже стоит MacWhisper / другой WhisperKit-клиент — модели из их папки подхватятся автоматически. Если нет — первая модель скачается в `~/Library/Application Support/PushToTalk/Models/`.
+If you already have MacWhisper / another WhisperKit client installed, their models will be picked up automatically. Otherwise the first model is downloaded to `~/Library/Application Support/PushToTalk/Models/`.
 
-## Использование
+## Usage
 
-1. Зажми **Right Option** (или то, что выбрал в Preferences).
-2. Говори. В правом верхнем углу (или внизу по центру — настраивается) появится HUD с уровнем сигнала.
-3. Отпусти кнопку. Через ~1–2 сек текст вставится в активное поле.
-4. Если поле потеряло фокус — открой иконку в menu bar: там последние 10 транскрипций, кликом копируются в буфер.
+1. Hold **Right Option** (or whatever you set in Preferences).
+2. Speak. A HUD appears in the top right corner (or bottom center — configurable) showing the mic level.
+3. Release the key. After ~1–2 s the text is inserted into the focused field.
+4. If the field lost focus — open the menu bar icon: it shows the last 10 transcriptions; click to copy.
 
-### Короткие нажатия
+### Short taps
 
-По умолчанию нажатия короче **150 мс** не запускают запись — кнопка работает как обычный Option. Порог настраивается в Preferences → General (50–800 мс).
+By default, presses shorter than **150 ms** don't start recording — the key behaves as a normal Option. The threshold is configurable in Preferences → General (50–800 ms).
 
 ## Preferences
 
-- **General** — хоткей, hold threshold, режим HUD (waveform / live transcript), позиция HUD (под иконкой / внизу по центру), launch at login
-- **Audio** — язык (Auto / Russian / English), модель Whisper, скачивание
-- **History** — очистить историю и метрики
+- **General** — hotkey, hold threshold, HUD mode (waveform / live transcript), HUD position (under the icon / bottom center), launch at login
+- **Audio** — language (Auto / Russian / English), Whisper model, download
+- **History** — clear history and reset metrics
 
-### Auto-detect языка
+### Auto language detection
 
-В режиме Auto приложение читает `Locale.preferredLanguages` из системы и ограничивает Whisper только этими языками. Т.е. если в macOS стоят RU, EN, UK — Whisper выберет между ними и не уйдёт, например, в болгарский.
+In Auto mode the app reads `Locale.preferredLanguages` from the system and restricts Whisper to those languages only. So if macOS has RU, EN, UK enabled, Whisper will pick among them and won't drift into, say, Bulgarian.
 
-## Архитектура
+## Architecture
 
-- `Sources/Core` — чистая логика (хоткей, рекордер, кликер, чистка текста, хранилище, метрики, модели)
-- `Sources/Whisper` — обёртка над WhisperKit
+- `Sources/Core` — pure logic (hotkey, recorder, inserter, text cleaner, storage, metrics, model manager)
+- `Sources/Whisper` — thin wrapper around WhisperKit
 - `Sources/UI` — SwiftUI: menu bar popover, preferences, onboarding, HUD
-- `Sources/App` — AppDelegate и точка входа
+- `Sources/App` — AppDelegate and entry point
 
-История транскрипций хранится в GRDB-SQLite базе в `~/Library/Application Support/PushToTalk/history.sqlite`.
+Transcription history is stored in a GRDB-SQLite database at `~/Library/Application Support/PushToTalk/history.sqlite`.
 
-## Логи
+## Logs
 
-Диагностические события пишутся в `~/Library/Logs/PushToTalk.log`. Полезно при проблемах с микрофоном, детекцией языка или хоткеем:
+Diagnostic events go to `~/Library/Logs/PushToTalk.log`. Useful for microphone / language detection / hotkey issues:
 
 ```bash
 tail -f ~/Library/Logs/PushToTalk.log
 ```
 
-## Траблшутинг
+## Troubleshooting
 
-**Хоткей не срабатывает.** Проверь Input Monitoring и Accessibility в System Settings → Privacy & Security. При смене подписи (новая ad-hoc сборка) TCC может сбросить записи — удали и добавь заново, либо запусти `scripts/setup-signing.sh` и пересобери.
+**Hotkey doesn't fire.** Check Input Monitoring and Accessibility in System Settings → Privacy & Security. When the signature changes (e.g. a fresh ad-hoc build) TCC may drop entries — delete and re-add, or run `scripts/setup-signing.sh` and rebuild.
 
-**Распознаёт тишину / пусто.** Проверь входной уровень: System Settings → Sound → Input. В логах смотри `finalize: rms=...` — нормальная речь ≥ 0.02. Если 0.0005 — микрофон молчит (не тот девайс / выключен / TCC mic не дан).
+**Recognizes silence / empty result.** Check the input level in System Settings → Sound → Input. In the logs, look at `finalize: rms=...` — normal speech is ≥ 0.02. If you see `0.0005` the mic is quiet (wrong device / muted / mic TCC not granted).
 
-**Путает украинский/русский с английским в auto.** Auto опирается на `Locale.preferredLanguages`. Убедись, что нужный язык реально добавлен в System Settings → Language & Region, либо переключи в Preferences → Audio с Auto на Russian / English явно.
+**Confuses Ukrainian / Russian with English in auto.** Auto relies on `Locale.preferredLanguages`. Make sure the language is actually listed in System Settings → Language & Region, or switch Preferences → Audio from Auto to an explicit Russian / English.
 
-**TCC-права сбрасываются каждую пересборку.** Значит ты ещё не запускал `scripts/setup-signing.sh` — там создаётся постоянный self-signed сертификат в login keychain. После этого любая пересборка подписывается одним и тем же ключом, и macOS считает это тем же приложением.
+**TCC permissions reset on every rebuild.** You haven't run `scripts/setup-signing.sh` yet. It creates a persistent self-signed certificate in the login keychain. After that every rebuild is signed with the same key, and macOS treats it as the same app.
 
-## Лицензия
+## License
 
 MIT.
