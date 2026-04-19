@@ -7,7 +7,7 @@
 Local push-to-talk dictation for macOS. Hold the hotkey, speak, release — recognized text is inserted into the focused input. No cloud: Whisper runs on GPU via WhisperKit.
 
 <p align="center">
-  <img src="docs/screenshots/popover.webp" width="320" alt="Menu bar popover" />
+  <img src="docs/screenshots/popover.webp?v=2" width="320" alt="Menu bar popover" />
 </p>
 
 ## Features
