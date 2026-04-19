@@ -18,9 +18,21 @@ public final class AudioRecorder {
         guard !isRecording else { return }
         let input = engine.inputNode
         let hwFormat = input.outputFormat(forBus: 0)
+        pttLog("AudioRecorder hwFormat: sampleRate=\(hwFormat.sampleRate) channels=\(hwFormat.channelCount)")
         converter = AVAudioConverter(from: hwFormat, to: targetFormat)
 
+        var tapCount = 0
         input.installTap(onBus: 0, bufferSize: 4096, format: hwFormat) { [weak self] buffer, _ in
+            tapCount += 1
+            if tapCount <= 3 || tapCount % 50 == 0 {
+                if let ch = buffer.floatChannelData?[0] {
+                    var sum: Float = 0
+                    let n = Int(buffer.frameLength)
+                    for i in 0..<n { sum += ch[i] * ch[i] }
+                    let rms = (sum / Float(max(n,1))).squareRoot()
+                    pttLog("tap #\(tapCount) frames=\(n) rms=\(rms)")
+                }
+            }
             self?.process(buffer: buffer)
         }
         accumulated = AVAudioPCMBuffer(pcmFormat: targetFormat, frameCapacity: 16_000 * 120)

@@ -36,8 +36,7 @@ struct PopoverView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
-                Image(systemName: "antenna.radiowaves.left.and.right")
-                    .foregroundColor(.accentColor)
+                radioIcon.frame(width: 18, height: 18)
                 Text("Push-to-Talk").font(.headline)
                 Spacer()
             }
@@ -112,4 +111,14 @@ struct PopoverView: View {
 
 extension Notification.Name {
     static let openPreferences = Notification.Name("openPreferences")
+}
+
+@ViewBuilder
+var radioIcon: some View {
+    if let url = Bundle.main.url(forResource: "radio", withExtension: "svg"),
+       let nsimg = NSImage(contentsOf: url) {
+        Image(nsImage: nsimg).resizable().scaledToFit()
+    } else {
+        Image(systemName: "antenna.radiowaves.left.and.right")
+    }
 }

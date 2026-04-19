@@ -15,8 +15,17 @@ final class MenuBarController {
         popover.contentViewController = NSHostingController(rootView: PopoverView(vm: viewModel))
 
         if let btn = statusItem.button {
-            btn.image = NSImage(systemSymbolName: "antenna.radiowaves.left.and.right",
-                                accessibilityDescription: "Push-to-Talk")
+            let img: NSImage?
+            if let url = Bundle.main.url(forResource: "radio", withExtension: "svg"),
+               let svg = NSImage(contentsOf: url) {
+                svg.size = NSSize(width: 18, height: 18)
+                svg.isTemplate = true
+                img = svg
+            } else {
+                img = NSImage(systemSymbolName: "antenna.radiowaves.left.and.right",
+                              accessibilityDescription: "Push-to-Talk")
+            }
+            btn.image = img
             btn.target = self
             btn.action = #selector(togglePopover(_:))
         }
@@ -38,6 +47,8 @@ final class MenuBarController {
         } else {
             viewModel.refresh()
             popover.show(relativeTo: btn.bounds, of: btn, preferredEdge: .minY)
+            NSApp.activate(ignoringOtherApps: true)
+            popover.contentViewController?.view.window?.makeKey()
         }
     }
 }

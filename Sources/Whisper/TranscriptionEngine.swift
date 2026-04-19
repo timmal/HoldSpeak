@@ -11,9 +11,26 @@ public final class TranscriptionEngine: ObservableObject {
     private var currentModelID: WhisperModelID?
     private var accumulated: [Float] = []
     private var streaming = false
+    private var promptTokens: [Int]?
 
     private let initialPrompt =
         "Смешанная русско-английская речь. Сохраняй английские термины в оригинале: meeting, deadline, pull request."
+
+    private static let whisperCodes: Set<String> = [
+        "en","zh","de","es","ru","ko","fr","ja","pt","tr","pl","ca","nl","ar","sv","it","id","hi","fi","vi","he","uk",
+        "el","ms","cs","ro","da","hu","ta","no","th","ur","hr","bg","lt","la","mi","ml","cy","sk","te","fa","lv","bn",
+        "sr","az","sl","kn","et","mk","br","eu","is","hy","ne","mn","bs","kk","sq","sw","gl","mr","pa","si","km",
+        "sn","yo","so","af","oc","ka","be","tg","sd","gu","am","yi","lo","uz","fo","ht","ps","tk","nn","mt","sa",
+        "lb","my","bo","tl","mg","as","tt","haw","ln","ha","ba","jw","su"
+    ]
+
+    private static func userPreferredLanguages() -> [String] {
+        let codes = Locale.preferredLanguages.compactMap { tag -> String? in
+            let two = String(tag.prefix(2)).lowercased()
+            return whisperCodes.contains(two) ? two : nil
+        }
+        return codes.isEmpty ? ["en"] : Array(NSOrderedSet(array: codes)) as? [String] ?? ["en"]
+    }
 
     public init() {}
 
@@ -33,6 +50,13 @@ public final class TranscriptionEngine: ObservableObject {
                                       download: false)
         kit = try await WhisperKit(config)
         currentModelID = model
+        promptTokens = tokenizePrompt(initialPrompt)
+    }
+
+    private func tokenizePrompt(_ prompt: String) -> [Int]? {
+        guard let tokenizer = kit?.tokenizer else { return nil }
+        let encoded = tokenizer.encode(text: " " + prompt)
+        return encoded.isEmpty ? nil : encoded
     }
 
     public func beginStream() {
@@ -63,29 +87,44 @@ public final class TranscriptionEngine: ObservableObject {
     }
 
     public func finalize() async -> (text: String, language: String?, durationMs: Int)? {
-        guard let kit, !accumulated.isEmpty else { return nil }
+        guard let kit else { pttLog("finalize: kit is nil"); return nil }
+        guard !accumulated.isEmpty else { pttLog("finalize: accumulated empty (no audio captured)"); return nil }
         let samples = accumulated
-        let durationMs = Int(Double(samples.count) / 16.0)   // 16 samples/ms at 16 kHz
-        let options = makeOptions()
+        let durationMs = Int(Double(samples.count) / 16.0)
+        let isAuto = PreferencesStore.shared.primaryLanguage == .auto
+        let preferred = Self.userPreferredLanguages()
         do {
-            let results: [TranscriptionResult] = try await kit.transcribe(audioArray: samples, decodeOptions: options)
+            var override: String? = nil
+            if isAuto, !preferred.isEmpty {
+                let detection = try await kit.detectLangauge(audioArray: samples)
+                let best = preferred
+                    .compactMap { code -> (String, Float)? in
+                        guard let p = detection.langProbs[code] else { return nil }
+                        return (code, p)
+                    }
+                    .max { $0.1 < $1.1 }
+                    .map { $0.0 }
+                override = best ?? preferred[0]
+                pttLog("finalize detect: top=\(detection.language) probs=\(detection.langProbs.filter { preferred.contains($0.key) }) chose=\(override ?? "?")")
+            }
+            let results = try await kit.transcribe(audioArray: samples, decodeOptions: makeOptions(override: override))
             let text = results.map(\.text).joined(separator: " ").trimmingCharacters(in: .whitespaces)
             let lang = results.first?.language
+            pttLog("finalize: text=\"\(text)\" lang=\(lang ?? "?")")
             if text.isEmpty { return nil }
             return (text, lang, durationMs)
         } catch {
-            NSLog("TranscriptionEngine finalize error: \(error)")
+            pttLog("finalize error: \(error)")
             return nil
         }
     }
 
-    private func makeOptions() -> DecodingOptions {
+    private func makeOptions(override: String? = nil) -> DecodingOptions {
         DecodingOptions(
             verbose: false,
             task: .transcribe,
-            language: nil,
+            language: override ?? PreferencesStore.shared.primaryLanguage.whisperCode,
             temperature: 0.0,
-            usePrefillPrompt: true,
             skipSpecialTokens: true,
             withoutTimestamps: true
         )

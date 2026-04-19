@@ -70,6 +70,12 @@ struct PreferencesView: View {
 
     private var audioTab: some View {
         Form {
+            Picker("Primary language", selection: $prefs.primaryLanguage) {
+                ForEach(PrimaryLanguage.allCases) { Text($0.label).tag($0) }
+            }
+            Text("Forcing a language helps on short utterances where auto-detect drifts to English.")
+                .font(.caption)
+                .foregroundColor(.secondary)
             Picker("Whisper model", selection: $prefs.modelID) {
                 ForEach(WhisperModelID.allCases) { Text($0.label).tag($0) }
             }

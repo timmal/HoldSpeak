@@ -4,6 +4,23 @@ import Combine
 import SwiftUI
 @preconcurrency import UserNotifications
 
+func pttLog(_ msg: String) {
+    NSLog("[PTT] \(msg)")
+    let path = ("~/Library/Logs/PushToTalk.log" as NSString).expandingTildeInPath
+    let url = URL(fileURLWithPath: path)
+    let line = "\(Date()) \(msg)\n"
+    guard let data = line.data(using: .utf8) else { return }
+    if !FileManager.default.fileExists(atPath: path) {
+        try? data.write(to: url)
+        return
+    }
+    if let fh = try? FileHandle(forWritingTo: url) {
+        try? fh.seekToEnd()
+        try? fh.write(contentsOf: data)
+        try? fh.close()
+    }
+}
+
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var hotkey: HotkeyMonitor!
@@ -41,7 +58,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         bind()
 
-        Task { try? await engine.preload(model: PreferencesStore.shared.modelID) }
+        Task {
+            let modelID = PreferencesStore.shared.modelID
+            pttLog("Preloading model: \(modelID.rawValue)")
+            do {
+                try await engine.preload(model: modelID)
+                pttLog("Model loaded OK: \(modelID.rawValue)")
+            } catch {
+                pttLog("Model preload FAILED: \(error)")
+            }
+        }
 
         NotificationCenter.default.addObserver(forName: .openPreferences, object: nil, queue: .main) { [weak self] _ in
             Task { @MainActor in self?.showPreferences() }
@@ -51,12 +77,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func handlePermissionsAndStart() {
+        hotkey.start()
         let perms = PermissionsManager.shared.current()
-        if perms.allGranted {
-            hotkey.start()
-        } else {
-            showOnboarding()
-        }
+        if !perms.allGranted { showOnboarding() }
     }
 
     private func showOnboarding() {
@@ -87,7 +110,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @ViewBuilder private func hudView() -> some View {
         switch PreferencesStore.shared.hudContentMode {
         case .waveformPill:
-            HUDPillView(amplitude: currentAmplitude)
+            HUDPillView()
         case .liveTranscript:
             HUDTranscriptView(text: engine.partialText)
         }
@@ -110,9 +133,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             .sink { [weak self] amp in
                 guard let self else { return }
                 self.currentAmplitude = amp
-                if PreferencesStore.shared.hudContentMode == .waveformPill {
-                    self.overlay.update(AnyView(self.hudView()))
-                }
+                HUDAmplitudeModel.shared.push(amp)
             }
             .store(in: &cancellables)
 
@@ -135,11 +156,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func startRecording() {
+        pttLog("startRecording")
         engine.beginStream()
         do {
             try recorder.start()
         } catch {
-            NSLog("Recorder start failed: \(error)")
+            pttLog("Recorder start failed: \(error)")
             return
         }
         menu.setRecording(true)
@@ -148,16 +170,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func endRecording() {
+        pttLog("endRecording")
         _ = recorder.stop()
         menu.setRecording(false)
         overlay.hide()
 
         Task { @MainActor in
-            guard let result = await engine.finalize() else { return }
+            let result = await engine.finalize()
+            guard let result = result else {
+                pttLog("finalize returned nil (model not loaded or empty audio)")
+                return
+            }
+            pttLog("finalize raw: \"\(result.text)\" lang=\(result.language ?? "?") durMs=\(result.durationMs)")
             let cleaned = TextCleaner.clean(result.text)
+            pttLog("cleaned: \"\(cleaned)\"")
             guard !cleaned.isEmpty else { return }
             let wordCount = cleaned.split(whereSeparator: { $0.isWhitespace }).count
             let insertion = TextInserter.insert(cleaned)
+            pttLog("insertion: \(insertion)")
             let record = TranscriptionRecord(
                 id: nil,
                 createdAt: Int64(Date().timeIntervalSince1970 * 1000),

@@ -8,14 +8,11 @@ public enum TextCleaner {
     }
 
     private static let rules: [Rule] = [
-        // Russian fillers
-        Rule(pattern: #"\b(э{2,}|м{2,}|эмм+|ну|типа|короче|это\sсамое)\b"#,
+        // Only drop extended hesitation sounds (эээ, эмммм, ummm, uhhh)
+        Rule(pattern: #"\b(э{3,}|м{3,}|эм{2,}|um{2,}|uh{2,}|uhm+)\b"#,
              replacement: "", options: [.caseInsensitive]),
-        // English fillers
-        Rule(pattern: #"\b(uh+|um+|er+|uhm+|like|you\s+know|i\s+mean)\b"#,
-             replacement: "", options: [.caseInsensitive]),
-        // Consecutive word repetition
-        Rule(pattern: #"\b(\w+)(\s+\1\b)+"#,
+        // Consecutive identical word repeated 3+ times (Whisper stutter)
+        Rule(pattern: #"\b(\w+)(\s+\1){2,}\b"#,
              replacement: "$1", options: [.caseInsensitive]),
         // Collapse whitespace
         Rule(pattern: #"\s+"#, replacement: " ", options: []),

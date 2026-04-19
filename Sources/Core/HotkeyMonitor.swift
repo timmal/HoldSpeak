@@ -52,24 +52,35 @@ public final class HotkeyMonitor {
         isHolding = false
     }
 
-    // Device-dependent modifier flag bits (IOKit NX_DEVICE* constants)
-    private static let rightOptionMask: UInt64 = 0x40
-    private static let rightCmdMask: UInt64 = 0x10
-    // Any modifier bit except our watched one, within the modifier range
-    private static let modifierRange: UInt64 = 0xFFFF0000
+    // Device-dependent modifier flag bits (IOKit NX_DEVICE* constants, lower 16 bits)
+    private static let rightOptionDeviceBit: UInt64 = 0x40
+    private static let rightCmdDeviceBit: UInt64 = 0x10
+    // CGEventFlags general modifier bits that indicate a user-facing modifier is held
+    private static let generalShift:   UInt64 = 0x00020000
+    private static let generalControl: UInt64 = 0x00040000
+    private static let generalOption:  UInt64 = 0x00080000
+    private static let generalCommand: UInt64 = 0x00100000
+    private static let allGeneralModifiers: UInt64 =
+        generalShift | generalControl | generalOption | generalCommand
 
-    private func watchedMask() -> UInt64 {
-        prefs.hotkey == .rightOption ? Self.rightOptionMask : Self.rightCmdMask
+    private func watchedDeviceBit() -> UInt64 {
+        prefs.hotkey == .rightOption ? Self.rightOptionDeviceBit : Self.rightCmdDeviceBit
+    }
+
+    private func watchedGeneralBit() -> UInt64 {
+        prefs.hotkey == .rightOption ? Self.generalOption : Self.generalCommand
     }
 
     private func handle(event: CGEvent, type: CGEventType) {
         guard type == .flagsChanged else { return }
         let flags = event.flags.rawValue
-        let watched = watchedMask()
-        let ourKeyDown = (flags & watched) != 0
+        let deviceBit = watchedDeviceBit()
+        let generalBit = watchedGeneralBit()
+        let ourKeyDown = (flags & deviceBit) != 0
 
-        let otherMods = flags & Self.modifierRange & ~watched
-        if ourKeyDown && otherMods != 0 { return }
+        // Reject only if a *different* general modifier is also held (chord collision avoidance).
+        let otherGeneralMods = flags & Self.allGeneralModifiers & ~generalBit
+        if ourKeyDown && otherGeneralMods != 0 { return }
 
         if ourKeyDown && !isHolding {
             pendingStartWork?.cancel()

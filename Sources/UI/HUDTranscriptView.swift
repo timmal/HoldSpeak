@@ -10,7 +10,7 @@ struct HUDTranscriptView: View {
                 .frame(width: 6, height: 6)
             Text(text.isEmpty ? "Listening…" : text)
                 .font(.system(size: 13))
-                .foregroundColor(.white.opacity(0.9))
+                .foregroundColor(.white)
                 .lineLimit(1)
                 .truncationMode(.head)
                 .frame(maxWidth: 460, alignment: .leading)
@@ -19,8 +19,7 @@ struct HUDTranscriptView: View {
         .padding(.vertical, 10)
         .background(
             RoundedRectangle(cornerRadius: 16)
-                .fill(.ultraThinMaterial)
-                .overlay(RoundedRectangle(cornerRadius: 16).stroke(.white.opacity(0.08)))
+                .fill(Color.black)
         )
     }
 }

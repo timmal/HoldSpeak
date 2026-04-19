@@ -40,6 +40,8 @@ targets:
       - path: Sources/Core
       - path: Sources/Whisper
         optional: true
+      - path: Resources/radio.svg
+        buildPhase: resources
     dependencies:
       - package: GRDB
         product: GRDB

@@ -1,9 +1,26 @@
 import SwiftUI
 
+@MainActor
+final class HUDAmplitudeModel: ObservableObject {
+    @Published var bars: [Float] = Array(repeating: 0, count: 24)
+    static let shared = HUDAmplitudeModel()
+    private var timer: Timer?
+    private var currentAmp: Float = 0
+    private init() {
+        timer = Timer.scheduledTimer(withTimeInterval: 1.0 / 30, repeats: true) { [weak self] _ in
+            Task { @MainActor in
+                guard let self else { return }
+                self.bars.removeFirst()
+                self.bars.append(min(1, self.currentAmp * 8))
+            }
+        }
+        RunLoop.main.add(timer!, forMode: .common)
+    }
+    func push(_ amp: Float) { currentAmp = amp }
+}
+
 struct HUDPillView: View {
-    let amplitude: Float
-    @State private var bars: [Float] = Array(repeating: 0, count: 20)
-    private let timer = Timer.publish(every: 1.0 / 30, on: .main, in: .common).autoconnect()
+    @ObservedObject private var model = HUDAmplitudeModel.shared
 
     var body: some View {
         HStack(spacing: 10) {
@@ -13,26 +30,18 @@ struct HUDPillView: View {
                 .opacity(0.85)
                 .overlay(Circle().stroke(.red.opacity(0.25), lineWidth: 4))
             HStack(spacing: 2) {
-                ForEach(0..<bars.count, id: \.self) { i in
+                ForEach(0..<model.bars.count, id: \.self) { i in
                     RoundedRectangle(cornerRadius: 1.5)
-                        .frame(width: 3, height: CGFloat(max(2, bars[i] * 30)))
-                        .foregroundColor(.white.opacity(0.9))
+                        .frame(width: 3, height: CGFloat(max(2, model.bars[i] * 30)))
+                        .foregroundColor(.white)
                 }
             }
-            Text("Recording")
-                .font(.system(size: 12, weight: .medium))
-                .foregroundColor(.white.opacity(0.85))
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
         .background(
             RoundedRectangle(cornerRadius: 20)
-                .fill(.ultraThinMaterial)
-                .overlay(RoundedRectangle(cornerRadius: 20).stroke(.white.opacity(0.08)))
+                .fill(Color.black)
         )
-        .onReceive(timer) { _ in
-            bars.removeFirst()
-            bars.append(min(1, amplitude * 6))
-        }
     }
 }
