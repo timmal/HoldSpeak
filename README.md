@@ -12,7 +12,6 @@ Local push-to-talk dictation for macOS. Hold the hotkey, speak, release — reco
 
 ## Features
 
-- **Push-to-talk** on Right Option or Right Cmd (configurable)
 - **Local transcription** through WhisperKit (CoreML, GPU)
 - **Code-switching RU/EN/UK and more** — in auto mode the language is chosen only from the ones you have in System Settings → Language & Region
 - **Insertion without clipboard** — via `CGEventKeyboardSetUnicodeString`; password fields are skipped
