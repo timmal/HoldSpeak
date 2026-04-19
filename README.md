@@ -10,6 +10,8 @@ Local push-to-talk dictation for macOS. Hold the hotkey, speak, release — reco
   <img src="docs/screenshots/popover.webp?v=2" width="320" alt="Menu bar popover" />
 </p>
 
+A free, local alternative to paid Whisper wrappers. Built for one reason: talking to AI is faster than typing to it. Average typing speed hovers around 40–60 wpm; comfortable speech is 130–160 wpm — two to three times faster. As more of the dev loop moves into prompts to AI agents, raw typing throughput becomes a real ceiling on how quickly you can iterate. Push-to-Talk lifts it: hold the hotkey, speak a full thought, release, it lands in the input.
+
 ## Features
 
 - **Local transcription** through WhisperKit (CoreML, GPU)
