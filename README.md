@@ -14,7 +14,15 @@ Local push-to-talk dictation for macOS. Hold the hotkey, speak, release — reco
 
 ## Install
 
-### From source (recommended)
+### Download a release
+
+Grab the latest DMG from the [Releases page](https://github.com/timmal/push-to-talk/releases/latest), open it, and drag `PushToTalk.app` into `Applications`.
+
+Because the app is self-signed, the first launch needs `Control-click → Open` once (macOS will warn about an unidentified developer). After that it launches normally.
+
+The app checks for new versions in the background and shows a banner in the menu bar popover when an update is available. You can also trigger a check manually via the **Check for updates** button in the popover.
+
+### From source
 
 Requires Xcode (Command Line Tools alone are not enough) and [XcodeGen](https://github.com/yonaskolb/XcodeGen).
 

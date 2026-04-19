@@ -6,6 +6,7 @@ final class PopoverViewModel: ObservableObject {
     @Published var metrics: Metrics = .init(totalWords: 0, wpm7d: 0)
     @Published var recent: [TranscriptionRecord] = []
     @Published var copiedID: Int64?
+    @Published var update: ReleaseInfo?
 
     private let store: HistoryStoring
     private let metricsEngine: MetricsComputing
@@ -18,6 +19,15 @@ final class PopoverViewModel: ObservableObject {
     func refresh() {
         metrics = (try? metricsEngine.current(now: Date())) ?? .init(totalWords: 0, wpm7d: 0)
         recent = (try? store.recent(limit: 10)) ?? []
+    }
+
+    func checkForUpdates() async {
+        guard let info = await UpdateChecker.shared.latest() else { return }
+        if UpdateChecker.isNewer(info.version, than: UpdateChecker.currentVersion) {
+            update = info
+        } else {
+            update = nil
+        }
     }
 
     func copy(_ record: TranscriptionRecord) {
@@ -41,6 +51,20 @@ struct PopoverView: View {
                 Spacer()
             }
             .padding(12)
+            if let upd = vm.update {
+                HStack {
+                    Image(systemName: "arrow.down.circle.fill").foregroundColor(.accentColor)
+                    Text("v\(upd.version) available")
+                        .font(.callout)
+                    Spacer()
+                    Button("Download") { NSWorkspace.shared.open(upd.url) }
+                        .buttonStyle(.borderedProminent)
+                        .controlSize(.small)
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .background(Color.accentColor.opacity(0.08))
+            }
             Divider()
             HStack(alignment: .firstTextBaseline, spacing: 24) {
                 VStack(alignment: .leading) {
@@ -98,6 +122,9 @@ struct PopoverView: View {
             HStack {
                 Button("Preferences…") {
                     NotificationCenter.default.post(name: .openPreferences, object: nil)
+                }
+                Button("Check for updates") {
+                    Task { await vm.checkForUpdates() }
                 }
                 Spacer()
                 Button("Quit") { NSApp.terminate(nil) }

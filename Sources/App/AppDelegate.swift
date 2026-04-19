@@ -74,6 +74,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         handlePermissionsAndStart()
+
+        Task { await popoverVM.checkForUpdates() }
     }
 
     private func handlePermissionsAndStart() {
