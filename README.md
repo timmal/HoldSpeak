@@ -22,6 +22,15 @@ Because the app is self-signed, the first launch needs `Control-click → Open` 
 
 The app checks for new versions in the background and shows a banner in the menu bar popover when an update is available. You can also trigger a check manually via the **Check for updates** button in the popover.
 
+### Updating
+
+1. When a new release is out, the menu bar popover shows an **Update available** banner.
+2. Click **Download** — it opens the latest release on GitHub.
+3. Download the `.dmg`, open it, and drag `PushToTalk.app` into `Applications`. macOS will ask to replace the old copy — confirm.
+4. Quit the running app from the menu bar (Quit), then launch the new one from `Applications`.
+
+Your preferences, history, and downloaded models live in `~/Library/Application Support/PushToTalk/` and are preserved across updates.
+
 ### From source
 
 Requires Xcode (Command Line Tools alone are not enough) and [XcodeGen](https://github.com/yonaskolb/XcodeGen).
