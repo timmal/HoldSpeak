@@ -20,7 +20,7 @@ Local push-to-talk dictation for macOS. Hold the hotkey, speak, release — reco
 
 Grab the latest DMG from the [Releases page](https://github.com/timmal/push-to-talk/releases/latest), open it, and drag `PushToTalk.app` into `Applications`.
 
-Because the app is self-signed, the first launch needs `Control-click → Open` once (macOS will warn about an unidentified developer). After that it launches normally.
+Because the app is self-signed, macOS will block the first launch. Open **System Settings → Privacy & Security**, scroll to the message *"PushToTalk was blocked…"* and click **Open Anyway**. Confirm with Touch ID / password. After that it launches normally from Launchpad / Applications.
 
 On first launch, grant three permissions:
 
