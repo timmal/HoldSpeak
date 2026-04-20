@@ -8,6 +8,18 @@ struct TerminologyPreferencesView: View {
 
     @State private var selectedID: UUID?
     @State private var editing: TerminologyEntry?
+    @State private var searchText: String = ""
+    @FocusState private var searchFocused: Bool
+
+    private var filteredEntries: [TerminologyEntry] {
+        let q = searchText.trimmingCharacters(in: .whitespaces)
+        guard !q.isEmpty else { return store.entries }
+        let needle = q.lowercased()
+        return store.entries.filter { entry in
+            if entry.canonical.lowercased().contains(needle) { return true }
+            return entry.variants.contains { $0.lowercased().contains(needle) }
+        }
+    }
 
     private static let languagePickerWidth: CGFloat = 180
 
@@ -15,13 +27,24 @@ struct TerminologyPreferencesView: View {
         VStack(alignment: .leading, spacing: 10) {
             header
             footer
+            searchField
 
             if store.entries.isEmpty {
                 emptyState
+            } else if filteredEntries.isEmpty {
+                noMatchesState
             } else {
                 list
             }
         }
+        .background(
+            Button("") { searchFocused = true }
+                .keyboardShortcut("f", modifiers: .command)
+                .opacity(0)
+                .frame(width: 0, height: 0)
+                .allowsHitTesting(false)
+        )
+        .onChange(of: store.activeLanguage) { _ in searchText = "" }
         .sheet(item: $editing) { entry in
             EditorSheet(entry: entry) { updated in
                 if store.entries.contains(where: { $0.id == updated.id }) {
@@ -91,10 +114,41 @@ struct TerminologyPreferencesView: View {
 
     private var list: some View {
         LazyVStack(spacing: 6) {
-            ForEach(store.entries) { entry in
+            ForEach(filteredEntries) { entry in
                 row(entry)
             }
         }
+    }
+
+    private var searchField: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "magnifyingglass")
+                .font(.system(size: 12))
+                .foregroundColor(PTT.textMuted(scheme))
+            TextField("Search terms", text: $searchText)
+                .textFieldStyle(.plain)
+                .font(.system(size: 13))
+                .foregroundColor(PTT.textBody(scheme))
+                .focused($searchFocused)
+            if !searchText.isEmpty {
+                Button { searchText = "" } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 12))
+                        .foregroundColor(PTT.textMuted(scheme))
+                }.buttonStyle(.plain)
+            }
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
+        .background(RoundedRectangle(cornerRadius: 8).fill(PTT.fieldBG(scheme)))
+        .overlay(RoundedRectangle(cornerRadius: 8).stroke(PTT.fieldBorder(scheme), lineWidth: 1))
+    }
+
+    private var noMatchesState: some View {
+        Text("No terms match “\(searchText)”.")
+            .font(.system(size: 12))
+            .foregroundColor(PTT.textSoft(scheme))
+            .padding(.vertical, 8)
     }
 
     private func row(_ entry: TerminologyEntry) -> some View {
