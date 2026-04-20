@@ -121,29 +121,28 @@ public enum HUDPosition: String, CaseIterable, Identifiable {
 
 public enum PrimaryLanguage: String, CaseIterable, Identifiable {
     case auto
-    case ru, en
-    case uk, es, fr, de, it, pt, pl, nl, tr, ar, zh, ja, ko, hi
+    case ar, zh, nl, en, fr, de, hi, it, ja, ko, pl, pt, ru, es, tr, uk
 
     public var id: String { rawValue }
     public var label: String {
         switch self {
         case .auto: return "Auto-detect"
-        case .ru:   return "Russian"
-        case .en:   return "English"
-        case .uk:   return "Ukrainian"
-        case .es:   return "Spanish"
-        case .fr:   return "French"
-        case .de:   return "German"
-        case .it:   return "Italian"
-        case .pt:   return "Portuguese"
-        case .pl:   return "Polish"
-        case .nl:   return "Dutch"
-        case .tr:   return "Turkish"
         case .ar:   return "Arabic"
         case .zh:   return "Chinese"
+        case .nl:   return "Dutch"
+        case .en:   return "English"
+        case .fr:   return "French"
+        case .de:   return "German"
+        case .hi:   return "Hindi"
+        case .it:   return "Italian"
         case .ja:   return "Japanese"
         case .ko:   return "Korean"
-        case .hi:   return "Hindi"
+        case .pl:   return "Polish"
+        case .pt:   return "Portuguese"
+        case .ru:   return "Russian"
+        case .es:   return "Spanish"
+        case .tr:   return "Turkish"
+        case .uk:   return "Ukrainian"
         }
     }
     public var whisperCode: String? {
