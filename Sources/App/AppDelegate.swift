@@ -183,7 +183,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             pttLog("cleaned: \"\(cleaned)\"")
             guard !cleaned.isEmpty else { return }
             let wordCount = cleaned.split(whereSeparator: { $0.isWhitespace }).count
-            let insertion = TextInserter.insert(cleaned)
+            let insertion = TextInserter.insert(cleaned + " ")
             pttLog("insertion: \(insertion)")
             let record = TranscriptionRecord(
                 id: nil,
