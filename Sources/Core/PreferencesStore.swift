@@ -167,7 +167,7 @@ public enum WhisperModelID: String, CaseIterable, Identifiable {
 public final class PreferencesStore: ObservableObject {
     @AppStorage("hotkeyBindingJSON") private var hotkeyBindingJSON: String = ""
     @AppStorage("holdThresholdMs") public var holdThresholdMs: Int = 150
-    @AppStorage("hudPosition")     public var hudPosition: HUDPosition = .underMenuBarIcon
+    @AppStorage("hudPosition")     public var hudPosition: HUDPosition = .bottomCenter
     @AppStorage("modelID")         public var modelID: WhisperModelID = .turbo
     @AppStorage("primaryLanguage") public var primaryLanguage: PrimaryLanguage = .ru
     @AppStorage("launchAtLogin")   public var launchAtLogin: Bool = false
