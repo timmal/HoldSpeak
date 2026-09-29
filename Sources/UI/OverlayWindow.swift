@@ -22,12 +22,20 @@ final class OverlayWindow {
         panel.hasShadow = false
         panel.ignoresMouseEvents = true
         panel.collectionBehavior = [.canJoinAllSpaces, .stationary, .fullScreenAuxiliary]
-        hosting = NSHostingView(rootView: content)
+        hosting = NSHostingView(rootView: AnyView(content
+            .frame(maxWidth: .infinity, maxHeight: .infinity)))
+        // Keep the panel its fixed size: by default the hosting view shrinks the
+        // window to the pill, clipping the shadow into a dark rectangle.
+        hosting.sizingOptions = []
+        hosting.wantsLayer = true
+        hosting.layer?.backgroundColor = .clear
         hosting.frame = panel.contentRect(forFrameRect: panel.frame)
         panel.contentView = hosting
     }
 
-    func update(_ content: AnyView) { hosting.rootView = content }
+    func update(_ content: AnyView) {
+        hosting.rootView = AnyView(content.frame(maxWidth: .infinity, maxHeight: .infinity))
+    }
 
     func show(anchor menuBarIconFrame: CGRect?) {
         reposition(anchor: menuBarIconFrame)
