@@ -4,9 +4,9 @@ import SwiftUI
 final class HUDAmplitudeModel: ObservableObject {
     enum Phase: Equatable { case listening, processing, done }
 
-    /// Samples across the visible waveform, ~2 s of history at `sampleStep`.
-    static let sampleCount = 40
-    private static let sampleStep: Double = 0.05
+    /// One thin bar per sample, ~1.5 s of history at `sampleStep`.
+    static let sampleCount = 26
+    private static let sampleStep: Double = 0.06
 
     /// Level history for the waveform, 0...1, oldest first.
     @Published private(set) var samples = [CGFloat](repeating: 0, count: sampleCount)
@@ -144,43 +144,36 @@ struct HUDPillView: View {
     private var waveform: some View {
         Waveform(samples: model.samples, scroll: model.scroll)
             .fill(text)
+            .clipped()
             // Older audio fades out on the left, like a scrolling editor view.
             .mask(LinearGradient(colors: [.clear, .white, .white],
                                  startPoint: .leading, endPoint: .trailing))
-            .frame(width: 72, height: 24)
+            .frame(width: 90, height: 24)
     }
 }
 
-/// Mirrored, smoothed amplitude envelope, newest sample at the right edge.
+/// Dense mirrored level bars, newest at the right edge, scrolling left.
 private struct Waveform: Shape {
     var samples: [CGFloat]
     var scroll: CGFloat
 
-    func path(in rect: CGRect) -> Path {
-        guard samples.count > 1 else { return Path() }
-        let dx = rect.width / CGFloat(samples.count - 1)
-        let mid = rect.midY
-        // A hairline at silence, full height at the top of the level range.
-        let points = samples.enumerated().map { i, v in
-            CGPoint(x: (CGFloat(i) - scroll) * dx,
-                    y: max(0.6, v * rect.height / 2))
-        }
-        var path = Path()
-        path.move(to: CGPoint(x: points[0].x, y: mid - points[0].y))
-        curve(&path, through: points.map { CGPoint(x: $0.x, y: mid - $0.y) })
-        path.addLine(to: CGPoint(x: points[points.count - 1].x, y: mid + points[points.count - 1].y))
-        curve(&path, through: points.reversed().map { CGPoint(x: $0.x, y: mid + $0.y) })
-        path.closeSubpath()
-        return path.intersection(Path(rect))
-    }
+    private let barWidth: CGFloat = 2
+    private let gap: CGFloat = 1.5
 
-    /// Quadratic curves through segment midpoints: a smooth line with no overshoot.
-    private func curve(_ path: inout Path, through pts: [CGPoint]) {
-        for i in 1..<pts.count {
-            let m = CGPoint(x: (pts[i - 1].x + pts[i].x) / 2, y: (pts[i - 1].y + pts[i].y) / 2)
-            path.addQuadCurve(to: m, control: pts[i - 1])
+    func path(in rect: CGRect) -> Path {
+        let pitch = barWidth + gap
+        let right = rect.maxX - barWidth
+        var path = Path()
+        for (i, v) in samples.enumerated() {
+            let age = CGFloat(samples.count - 1 - i) + scroll
+            let x = right - age * pitch
+            guard x > rect.minX - barWidth else { continue }
+            // A 2 px stub at silence, full height at the top of the level range.
+            let h = max(2, v * rect.height)
+            path.addRoundedRect(in: CGRect(x: x, y: rect.midY - h / 2, width: barWidth, height: h),
+                                cornerSize: CGSize(width: 1, height: 1))
         }
-        path.addLine(to: pts[pts.count - 1])
+        return path
     }
 }
 
