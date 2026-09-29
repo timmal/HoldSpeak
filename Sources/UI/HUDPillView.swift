@@ -4,50 +4,44 @@ import SwiftUI
 final class HUDAmplitudeModel: ObservableObject {
     enum Phase: Equatable { case listening, processing, done }
 
-    static let barCount = 7
+    /// Samples across the visible waveform, ~2 s of history at `sampleStep`.
+    static let sampleCount = 40
+    private static let sampleStep: Double = 0.05
 
-    /// Bar heights, 0...1, including the idle "breathing" floor.
-    @Published private(set) var bars: [CGFloat] = Array(repeating: 0, count: barCount)
+    /// Level history for the waveform, 0...1, oldest first.
+    @Published private(set) var samples = [CGFloat](repeating: 0, count: sampleCount)
+    /// How far (0...1 of one sample) the waveform has scrolled since the last
+    /// sample, so it glides left instead of jumping.
+    @Published private(set) var scroll: CGFloat = 0
     /// Overall smoothed speech level, 0...1 — drives the pill's slight width swell.
     @Published private(set) var level: CGFloat = 0
     @Published private(set) var phase: Phase = .listening
 
     static let shared = HUDAmplitudeModel()
 
-    /// Newest level sits in the centre bar and moves outward, one bar per step,
-    /// so height reads as loudness and the spread as the rhythm of speech.
-    private static let historyStep: Double = 0.08
-    /// Per-bar inertia spread: attack 50–80 ms, release 180–250 ms.
-    private static let inertia: [Double] = [0.3, 0.8, 0.1, 0.5, 0.9, 0.2, 0.6]
-
     private var timer: Timer?
     private var lastTick: CFTimeInterval = 0
-    private var clock: Double = 0
-    private var sinceStep: Double = 0
+    private var sinceSample: Double = 0
     /// Light EMA of the normalised mic level; smooths buffer-to-buffer jitter.
     private var smoothed: Double = 0
-    /// history[0] is the current level, history[k] the level k steps ago.
-    private var history = [Double](repeating: 0, count: barCount / 2 + 1)
+    /// Fast attack, slower release: the waveform swells with a word and eases off.
+    private var follower = LevelEnvelope(attack: 0.03, release: 0.12)
     private var overall = LevelEnvelope(attack: 0.08, release: 0.3)
-    private var envelopes: [LevelEnvelope] = inertia.map {
-        LevelEnvelope(attack: 0.05 + 0.03 * $0, release: 0.18 + 0.07 * $0)
-    }
 
     private init() {}
 
     /// Runs the 60 Hz animation timer; only needed while the HUD is listening.
-    /// Starts from flat bars, as if the model had decayed while hidden.
+    /// Starts from a flat line, as if the model had decayed while hidden.
     func start() {
         phase = .listening
         guard timer == nil else { return }
         smoothed = 0
-        clock = 0
-        sinceStep = 0
-        history = history.map { _ in 0 }
+        sinceSample = 0
+        scroll = 0
+        follower.reset()
         overall.reset()
-        for i in envelopes.indices { envelopes[i].reset() }
+        samples = samples.map { _ in 0 }
         lastTick = CACurrentMediaTime()
-        tick(dt: 0)
         let timer = Timer(timeInterval: 1.0 / 60, repeats: true) { [weak self] _ in
             Task { @MainActor in
                 guard let self else { return }
@@ -75,22 +69,16 @@ final class HUDAmplitudeModel: ObservableObject {
     }
 
     private func tick(dt: Double) {
-        clock += dt
-        sinceStep += dt
-        history[0] = smoothed
-        if sinceStep >= Self.historyStep {
-            sinceStep = 0
-            history = [smoothed] + history.dropLast()
-        }
+        let value = CGFloat(follower.step(toward: smoothed, dt: dt))
         level = CGFloat(overall.step(toward: smoothed, dt: dt))
-        let centre = Self.barCount / 2
-        bars = (0..<Self.barCount).map { i in
-            let distance = abs(i - centre)
-            let speech = envelopes[i].step(toward: history[distance], dt: dt)
-            // Silence: a faint ~2.6 s breath; speech takes over from it.
-            let breath = 0.06 + 0.05 * (0.5 + 0.5 * sin(clock * 2 * .pi / 2.6 - Double(distance) * 0.6))
-            return CGFloat(max(breath, speech))
+        sinceSample += dt
+        if sinceSample >= Self.sampleStep {
+            sinceSample -= Self.sampleStep
+            samples = Array(samples.dropFirst()) + [value]
+        } else {
+            samples[samples.count - 1] = value
         }
+        scroll = CGFloat(sinceSample / Self.sampleStep)
     }
 }
 
@@ -109,7 +97,7 @@ struct HUDPillView: View {
                 .foregroundColor(model.phase == .listening ? text : muted)
                 .fixedSize()
             if model.phase == .listening {
-                bars
+                waveform
                     .transition(.scale(scale: 0.1, anchor: .leading).combined(with: .opacity))
             }
         }
@@ -153,15 +141,46 @@ struct HUDPillView: View {
         }
     }
 
-    private var bars: some View {
-        HStack(spacing: 3.5) {
-            ForEach(0..<model.bars.count, id: \.self) { i in
-                Capsule()
-                    .fill(text.opacity(0.55 + 0.45 * Double(model.bars[i])))
-                    .frame(width: 3.5, height: 3 + model.bars[i] * 21)
-            }
+    private var waveform: some View {
+        Waveform(samples: model.samples, scroll: model.scroll)
+            .fill(text)
+            // Older audio fades out on the left, like a scrolling editor view.
+            .mask(LinearGradient(colors: [.clear, .white, .white],
+                                 startPoint: .leading, endPoint: .trailing))
+            .frame(width: 72, height: 24)
+    }
+}
+
+/// Mirrored, smoothed amplitude envelope, newest sample at the right edge.
+private struct Waveform: Shape {
+    var samples: [CGFloat]
+    var scroll: CGFloat
+
+    func path(in rect: CGRect) -> Path {
+        guard samples.count > 1 else { return Path() }
+        let dx = rect.width / CGFloat(samples.count - 1)
+        let mid = rect.midY
+        // A hairline at silence, full height at the top of the level range.
+        let points = samples.enumerated().map { i, v in
+            CGPoint(x: (CGFloat(i) - scroll) * dx,
+                    y: max(0.6, v * rect.height / 2))
         }
-        .frame(height: 24)
+        var path = Path()
+        path.move(to: CGPoint(x: points[0].x, y: mid - points[0].y))
+        curve(&path, through: points.map { CGPoint(x: $0.x, y: mid - $0.y) })
+        path.addLine(to: CGPoint(x: points[points.count - 1].x, y: mid + points[points.count - 1].y))
+        curve(&path, through: points.reversed().map { CGPoint(x: $0.x, y: mid + $0.y) })
+        path.closeSubpath()
+        return path.intersection(Path(rect))
+    }
+
+    /// Quadratic curves through segment midpoints: a smooth line with no overshoot.
+    private func curve(_ path: inout Path, through pts: [CGPoint]) {
+        for i in 1..<pts.count {
+            let m = CGPoint(x: (pts[i - 1].x + pts[i].x) / 2, y: (pts[i - 1].y + pts[i].y) / 2)
+            path.addQuadCurve(to: m, control: pts[i - 1])
+        }
+        path.addLine(to: pts[pts.count - 1])
     }
 }
 
