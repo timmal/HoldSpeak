@@ -6,10 +6,13 @@ final class OverlayWindow {
     private let panel: NSPanel
     private let hosting: NSHostingView<AnyView>
     private let prefs: PreferencesStore
+    /// Transparent margin around the pill so its shadow isn't clipped; the
+    /// placement below offsets it, keeping the pill where it used to sit.
+    private static let shadowInset: CGFloat = 14
 
     init(prefs: PreferencesStore = .shared, content: AnyView) {
         self.prefs = prefs
-        panel = NSPanel(contentRect: .init(x: 0, y: 0, width: 420, height: 56),
+        panel = NSPanel(contentRect: .init(x: 0, y: 0, width: 420, height: 84),
                         styleMask: [.borderless, .nonactivatingPanel],
                         backing: .buffered, defer: true)
         panel.isFloatingPanel = true
@@ -54,17 +57,17 @@ final class OverlayWindow {
         case .underMenuBarIcon:
             if let anchor {
                 let x = anchor.midX - frame.width / 2
-                let y = anchor.minY - frame.height - 6
+                let y = anchor.minY - frame.height - 6 + Self.shadowInset
                 panel.setFrameOrigin(NSPoint(x: x, y: y))
             } else {
                 let vf = screen.visibleFrame
                 panel.setFrameOrigin(NSPoint(x: vf.maxX - frame.width - 16,
-                                             y: vf.maxY - frame.height - 6))
+                                             y: vf.maxY - frame.height - 6 + Self.shadowInset))
             }
         case .bottomCenter:
             let vf = screen.visibleFrame
             panel.setFrameOrigin(NSPoint(x: vf.midX - frame.width / 2,
-                                         y: vf.minY + 80))
+                                         y: vf.minY + 80 - Self.shadowInset))
         }
     }
 }

@@ -90,11 +90,11 @@ struct HUDPillView: View {
     private let muted = PTT.textMuted(.dark)
 
     var body: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: 10) {
             indicator
-                .frame(width: 12, height: 12)
+                .frame(width: 14, height: 14)
             Text(label)
-                .font(.system(size: 12, weight: .medium))
+                .font(.system(size: 13, weight: .medium))
                 .foregroundColor(model.phase == .listening ? text : muted)
                 .fixedSize()
             if model.phase == .listening {
@@ -102,12 +102,15 @@ struct HUDPillView: View {
                     .transition(.scale(scale: 0.1, anchor: .leading).combined(with: .opacity))
             }
         }
-        .padding(.horizontal, 12 + (model.phase == .listening ? model.level * 2 : 0))
-        .frame(height: 30)
+        .padding(.horizontal, 16 + (model.phase == .listening ? model.level * 2 : 0))
+        .frame(height: 38)
         .background(
             Capsule()
                 .fill(Color.black.opacity(0.9))
                 .overlay(Capsule().stroke(PTT.surfaceBorder(.dark), lineWidth: 1))
+                // Two-layer shadow: a tight contact edge plus a wide soft ambient.
+                .shadow(color: .black.opacity(0.18), radius: 1.5, y: 1)
+                .shadow(color: .black.opacity(0.28), radius: 14, y: 6)
         )
         .animation(.spring(response: 0.35, dampingFraction: 0.86), value: model.phase)
     }
@@ -125,33 +128,29 @@ struct HUDPillView: View {
         case .listening:
             Circle()
                 .fill(PTT.recordingRed)
-                .frame(width: 7, height: 7)
-                .background(
-                    Circle()
-                        .fill(PTT.recordingRed.opacity(0.25))
-                        .scaleEffect(1.3 + model.level * 0.6)
-                )
+                .frame(width: 8, height: 8)
+                .background(Circle().fill(PTT.recordingRed.opacity(0.22)).frame(width: 13, height: 13))
                 .transition(.opacity)
         case .processing:
             Spinner(color: muted)
                 .transition(.scale(scale: 0.4).combined(with: .opacity))
         case .done:
             Image(systemName: "checkmark")
-                .font(.system(size: 10, weight: .bold))
+                .font(.system(size: 11, weight: .bold))
                 .foregroundColor(PTT.statusGreen)
                 .transition(.scale(scale: 0.4).combined(with: .opacity))
         }
     }
 
     private var bars: some View {
-        HStack(spacing: 3) {
+        HStack(spacing: 3.5) {
             ForEach(0..<model.bars.count, id: \.self) { i in
                 Capsule()
                     .fill(text.opacity(0.55 + 0.45 * Double(model.bars[i])))
-                    .frame(width: 3, height: 3 + model.bars[i] * 13)
+                    .frame(width: 3.5, height: 4 + model.bars[i] * 16)
             }
         }
-        .frame(height: 16)
+        .frame(height: 20)
     }
 }
 
@@ -167,6 +166,6 @@ private struct Spinner: View {
                 .stroke(color, style: StrokeStyle(lineWidth: 1.5, lineCap: .round))
                 .rotationEffect(.degrees(t.truncatingRemainder(dividingBy: 0.9) / 0.9 * 360))
         }
-        .frame(width: 11, height: 11)
+        .frame(width: 13, height: 13)
     }
 }
