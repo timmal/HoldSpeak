@@ -14,16 +14,20 @@ final class HUDAmplitudeModel: ObservableObject {
 
     static let shared = HUDAmplitudeModel()
 
-    /// Centre bars reach higher than the edges, so speech reads as a soft hump.
-    private static let weights: [Double] = [0.5, 0.72, 0.9, 1.0, 0.88, 0.7, 0.52]
+    /// Newest level sits in the centre bar and moves outward, one bar per step,
+    /// so height reads as loudness and the spread as the rhythm of speech.
+    private static let historyStep: Double = 0.08
     /// Per-bar inertia spread: attack 50–80 ms, release 180–250 ms.
     private static let inertia: [Double] = [0.3, 0.8, 0.1, 0.5, 0.9, 0.2, 0.6]
 
     private var timer: Timer?
     private var lastTick: CFTimeInterval = 0
     private var clock: Double = 0
-    /// EMA of the normalised mic level; the per-bar envelopes follow this.
+    private var sinceStep: Double = 0
+    /// Light EMA of the normalised mic level; smooths buffer-to-buffer jitter.
     private var smoothed: Double = 0
+    /// history[0] is the current level, history[k] the level k steps ago.
+    private var history = [Double](repeating: 0, count: barCount / 2 + 1)
     private var overall = LevelEnvelope(attack: 0.08, release: 0.3)
     private var envelopes: [LevelEnvelope] = inertia.map {
         LevelEnvelope(attack: 0.05 + 0.03 * $0, release: 0.18 + 0.07 * $0)
@@ -38,6 +42,8 @@ final class HUDAmplitudeModel: ObservableObject {
         guard timer == nil else { return }
         smoothed = 0
         clock = 0
+        sinceStep = 0
+        history = history.map { _ in 0 }
         overall.reset()
         for i in envelopes.indices { envelopes[i].reset() }
         lastTick = CACurrentMediaTime()
@@ -65,20 +71,25 @@ final class HUDAmplitudeModel: ObservableObject {
     }
 
     func push(_ amp: Float) {
-        smoothed += (LevelEnvelope.normalize(rms: amp) - smoothed) * 0.35
+        smoothed += (LevelEnvelope.normalize(rms: amp) - smoothed) * 0.6
     }
 
     private func tick(dt: Double) {
         clock += dt
+        sinceStep += dt
+        history[0] = smoothed
+        if sinceStep >= Self.historyStep {
+            sinceStep = 0
+            history = [smoothed] + history.dropLast()
+        }
         level = CGFloat(overall.step(toward: smoothed, dt: dt))
+        let centre = Self.barCount / 2
         bars = (0..<Self.barCount).map { i in
-            let offset = Double(i) * 0.9
-            // Slow independent wobble so loud speech isn't a frozen hump.
-            let wobble = 0.8 + 0.2 * sin(clock * (5 + Double(i) * 0.7) + offset)
-            let speech = envelopes[i].step(toward: smoothed * Self.weights[i] * wobble, dt: dt)
-            // Silence: a slow ~2.6 s breath travelling across the bars.
-            let breath = 0.14 + 0.07 * (0.5 + 0.5 * sin(clock * 2 * .pi / 2.6 - offset * 0.5))
-            return CGFloat(breath + (1 - breath) * speech)
+            let distance = abs(i - centre)
+            let speech = envelopes[i].step(toward: history[distance], dt: dt)
+            // Silence: a faint ~2.6 s breath; speech takes over from it.
+            let breath = 0.06 + 0.05 * (0.5 + 0.5 * sin(clock * 2 * .pi / 2.6 - Double(distance) * 0.6))
+            return CGFloat(max(breath, speech))
         }
     }
 }
@@ -94,7 +105,7 @@ struct HUDPillView: View {
             indicator
                 .frame(width: 14, height: 14)
             Text(label)
-                .font(.system(size: 13, weight: .medium))
+                .font(.system(size: 14, weight: .medium))
                 .foregroundColor(model.phase == .listening ? text : muted)
                 .fixedSize()
             if model.phase == .listening {
@@ -102,8 +113,8 @@ struct HUDPillView: View {
                     .transition(.scale(scale: 0.1, anchor: .leading).combined(with: .opacity))
             }
         }
-        .padding(.horizontal, 16 + (model.phase == .listening ? model.level * 2 : 0))
-        .frame(height: 38)
+        .padding(.horizontal, 18 + (model.phase == .listening ? model.level * 2 : 0))
+        .frame(height: 43)
         .background(
             Capsule()
                 .fill(Color.black.opacity(0.9))
@@ -147,10 +158,10 @@ struct HUDPillView: View {
             ForEach(0..<model.bars.count, id: \.self) { i in
                 Capsule()
                     .fill(text.opacity(0.55 + 0.45 * Double(model.bars[i])))
-                    .frame(width: 3.5, height: 4 + model.bars[i] * 16)
+                    .frame(width: 3.5, height: 3 + model.bars[i] * 21)
             }
         }
-        .frame(height: 20)
+        .frame(height: 24)
     }
 }
 
