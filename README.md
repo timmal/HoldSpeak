@@ -23,6 +23,7 @@ A free, local alternative to paid Whisper wrappers. Built for one reason: talkin
 - **Menu bar popover** with recent transcriptions (click to copy) and metrics: dictations today / yesterday, 7-day avg WPM
 - **HUD overlay** while you hold the key: dark pill with a live mic level; if a dictation fails (no model, bad API key, quota), the reason shows in the same pill
 - **Light text cleanup** — trims long "eeeeee / mmmmm / ummm", collapses 3+ consecutive repeats, capitalizes the first letter and adds a period
+- **Optional filler-word removal** — off by default; drops "ну / короче / как бы / um / you know" from an editable list (Whisper) or by context (Gemini)
 - **Liquid Glass** on macOS 26 and later — the HUD, popover, Preferences and onboarding use the system glass; macOS 13–15 keep the classic look
 - **Terminology dictionary** — canonical IT terms (pull request, Kubernetes, Claude Code, …) replace misrecognized Russian transliterations in transcripts; ships with ~110 defaults and is fully editable
 
@@ -71,7 +72,7 @@ Pick a Gemini model in Preferences → Audio → **Model** (or choose Gemini dur
 3. Paste the key in HoldSpeak and click **Save**. The key is checked with Google and stored in the macOS Keychain, never in preferences files; it survives app updates. After each update macOS asks once to let the new version read the key — enter your Mac password and click **Always Allow** (HoldSpeak is self-signed, so the Keychain sees every new build as a new app).
 
 <p align="center">
-  <img src="docs/screenshots/preferences-audio-gemini.webp?v=4" width="560" alt="Preferences · Audio with Gemini selected" />
+  <img src="docs/screenshots/preferences-audio-gemini.webp?v=5" width="560" alt="Preferences · Audio with Gemini selected" />
 </p>
 
 Models:
@@ -87,7 +88,7 @@ If something goes wrong, the reason appears right in the HUD pill instead of a s
   <img src="docs/screenshots/hud-quota.webp?v=4" width="334" alt="HUD · Gemini daily limit reached" />
 </p>
 
-Privacy: with Gemini, each dictation's audio is sent to Google. Whisper stays the default and never sends anything anywhere. Text cleanup, the "Add period" / "Capitalize" options and the terminology dictionary apply to both engines; Gemini also receives your dictionary's terms as spelling hints.
+Privacy: with Gemini, each dictation's audio is sent to Google. Whisper stays the default and never sends anything anywhere. Text cleanup, the "Add period" / "Capitalize" / "Remove filler words" options and the terminology dictionary apply to both engines; Gemini also receives your dictionary's terms as spelling hints.
 
 ### Reducing insertion latency
 
@@ -115,7 +116,7 @@ By default, presses shorter than **150 ms** don't start recording — the key be
 ## Preferences
 
 - **General** — hotkey, hold threshold, HUD position (under the icon / bottom center), theme (Auto / Light / Dark), launch at login, update check
-- **Audio** — microphone, language, model (Whisper or Gemini), model download / deletion, Gemini API key
+- **Audio** — microphone, language, model (Whisper or Gemini), model download / deletion, Gemini API key, text cleanup options (period, capitalization, filler words)
 - **Terms** — terminology dictionary (see below)
 - **History** — clear history and reset metrics
 - **Support**
@@ -123,8 +124,15 @@ By default, presses shorter than **150 ms** don't start recording — the key be
 <p align="center">
   <img src="docs/screenshots/preferences-general.webp?v=4" width="560" alt="Preferences · General" />
   <br /><br />
-  <img src="docs/screenshots/preferences-audio.webp?v=4" width="560" alt="Preferences · Audio" />
+  <img src="docs/screenshots/preferences-audio.webp?v=5" width="560" alt="Preferences · Audio" />
 </p>
+
+### Filler words
+
+Preferences → Audio → **Remove filler words** (off by default) cleans up the "ну", "короче", "как бы", "um", "you know" you say while thinking:
+
+- **Whisper** — a text field appears with an editable, comma-separated list, prefilled with common Russian and English fillers. Only whole words are removed (any case), together with the comma after them, so *"Ну, короче, давай созвонимся"* becomes *"Давай созвонимся."* and *"нужно"* is left alone. Words that often carry meaning — *типа*, *вот*, *like* — aren't in the default list; add them if you want.
+- **Gemini** — no list: the model is asked to drop fillers by context and keep the ones that mean something (*"объект типа Promise"*, *"I like it"*).
 
 ### Auto language detection
 
