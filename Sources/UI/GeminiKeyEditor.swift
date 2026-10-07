@@ -47,7 +47,7 @@ struct GeminiKeyEditor: View {
             Link("Get an API key in Google AI Studio ↗", destination: Self.keyPageURL)
                 .font(.system(size: 11))
 
-            Text("Audio is sent to Google for transcription. Set up billing for the key in AI Studio — Google charges about $0.30 per hour of speech; without billing the key stops after a couple dozen dictations a day.")
+            Text("Audio is sent to Google for transcription. Set up billing for the key in AI Studio — with \(prefs.geminiModel.shortLabel) Google charges about \(prefs.geminiModel.costPerHour) per hour of speech; without billing the key stops after a couple dozen dictations a day.")
                 .font(.system(size: 11))
                 .foregroundColor(PTT.textSoft(scheme))
                 .fixedSize(horizontal: false, vertical: true)

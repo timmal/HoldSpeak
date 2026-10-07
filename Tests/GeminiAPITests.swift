@@ -152,6 +152,11 @@ final class GeminiAPITests: XCTestCase {
         XCTAssertEqual(policy.order(preferred: .transcribe, now: now), [.transcribe, .flashLite])
     }
 
+    func test_costPerHour_perModel() {
+        XCTAssertEqual(GeminiModelID.transcribe.costPerHour, "$0.30")
+        XCTAssertEqual(GeminiModelID.flashLite.costPerHour, "$0.06")
+    }
+
     func test_fallbackNotice_namesBothModels() {
         let notice = ModelFallbackNotice(failed: .transcribe, used: .flashLite)
         XCTAssertEqual(notice.title, "3.5 Transcribe unavailable")

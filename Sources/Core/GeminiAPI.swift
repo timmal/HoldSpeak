@@ -19,6 +19,14 @@ public enum GeminiModelID: String, CaseIterable, Identifiable {
     /// The dedicated transcription model rejects thinking settings; Flash-Lite needs
     /// minimal thinking or a reply takes 5–10 s.
     public var supportsThinkingConfig: Bool { self != .transcribe }
+    /// Rough paid-tier price per hour of speech (Google's pricing page, October 2026):
+    /// audio in at 25 tokens/s plus the transcript out.
+    public var costPerHour: String {
+        switch self {
+        case .transcribe: return "$0.30"
+        case .flashLite:  return "$0.06"
+        }
+    }
     /// Tried with the same audio when this model fails on Google's side.
     public var fallback: GeminiModelID {
         switch self {

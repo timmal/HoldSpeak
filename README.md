@@ -79,6 +79,8 @@ Models:
 - **3.5 Transcribe** (default) — dedicated speech-to-text, ~2 s per dictation, about **$0.30 per hour of speech**.
 - **3.5 Flash-Lite** — cheaper (~$0.06/hour) and better at following the terminology dictionary, but response time varies more.
 
+If the selected model fails on Google's side (an error that isn't about the key, quota or network), HoldSpeak sends the same audio to the other model and says so in the HUD pill; the failed model is skipped for the next 30 minutes.
+
 If something goes wrong, the reason appears right in the HUD pill instead of a silent empty result:
 
 <p align="center">
