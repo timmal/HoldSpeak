@@ -90,6 +90,27 @@ struct PreferencesView: View {
     }
 
     var body: some View {
+        // The tab bar sits above the content rather than over it, so nothing
+        // scrolls under the bar or the transparent title bar.
+        VStack(spacing: 0) {
+            tabBar
+            tabContent
+        }
+        .frame(width: 560, height: 428)
+        .modifier(PrefsWindowBackground())
+        .preferredColorScheme(colorSchemeOverride)
+        .onAppear {
+            tab = initialTab
+            if tab == .history { loadHistory() }
+        }
+        .onChange(of: tab) { newTab in if newTab == .history { loadHistory() } }
+        .onReceive(NotificationCenter.default.publisher(for: .historyDidChange)) { _ in
+            if tab == .history { loadHistory() }
+        }
+    }
+
+    @ViewBuilder
+    private var tabContent: some View {
         Group {
             if tab == .terminology {
                 TerminologyPreferencesView()
@@ -114,18 +135,7 @@ struct PreferencesView: View {
                 }
             }
         }
-        .modifier(PrefsTopBar { tabBar })
-        .frame(width: 560, height: 428)
-        .modifier(PrefsWindowBackground())
-        .preferredColorScheme(colorSchemeOverride)
-        .onAppear {
-            tab = initialTab
-            if tab == .history { loadHistory() }
-        }
-        .onChange(of: tab) { newTab in if newTab == .history { loadHistory() } }
-        .onReceive(NotificationCenter.default.publisher(for: .historyDidChange)) { _ in
-            if tab == .history { loadHistory() }
-        }
+        .frame(maxHeight: .infinity, alignment: .top)
     }
 
     /// `.requiresApproval` counts as on: the item is registered, the user just has
@@ -506,23 +516,6 @@ struct PreferencesView: View {
 }
 
 // MARK: - Window chrome
-
-/// The tab bar floats over the content. On macOS 26+ it is a glass bar the content
-/// scrolls under; older systems give it the window colour so nothing shows through.
-private struct PrefsTopBar<Bar: View>: ViewModifier {
-    @ViewBuilder var bar: () -> Bar
-    @Environment(\.colorScheme) private var scheme
-
-    func body(content: Content) -> some View {
-        if #available(macOS 26, *) {
-            content.safeAreaBar(edge: .top, spacing: 0) { bar() }
-        } else {
-            content.safeAreaInset(edge: .top, spacing: 0) {
-                bar().frame(maxWidth: .infinity).background(PTT.prefsBG(scheme))
-            }
-        }
-    }
-}
 
 /// macOS 26+ uses the standard window background, which Liquid Glass controls are
 /// designed against; older systems keep the blurred dark panel.
