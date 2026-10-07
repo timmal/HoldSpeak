@@ -1,7 +1,8 @@
 import AVFoundation
 
 public enum TranscriptionResult {
-    case text(String, language: String?, durationMs: Int)
+    /// `fallback` is set when Gemini answered through the other model.
+    case text(String, language: String?, durationMs: Int, fallback: ModelFallbackNotice? = nil)
     /// Silence or nothing recognisable — nothing to tell the user.
     case empty
     case failed(TranscriptionFailure)

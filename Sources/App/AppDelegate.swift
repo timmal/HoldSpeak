@@ -42,6 +42,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         recorder = AudioRecorder()
         engine = TranscriptionEngine()
         coordinator = TranscriptionCoordinator(engine: engine, store: store)
+        coordinator.onModelFallback = { [weak self] notice in
+            guard let self else { return }
+            self.overlay.flash(AnyView(HUDMessageView(title: notice.title, detail: notice.body,
+                                                      symbol: "arrow.triangle.2.circlepath", tint: .yellow)),
+                               anchor: self.menu.statusItemFrame, seconds: 4)
+        }
         modelsVM = ModelsViewModel()
         modelsVM.onDownloaded = { [weak self] id in
             let prefs = PreferencesStore.shared

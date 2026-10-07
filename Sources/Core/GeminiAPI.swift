@@ -19,6 +19,53 @@ public enum GeminiModelID: String, CaseIterable, Identifiable {
     /// The dedicated transcription model rejects thinking settings; Flash-Lite needs
     /// minimal thinking or a reply takes 5–10 s.
     public var supportsThinkingConfig: Bool { self != .transcribe }
+    /// Tried with the same audio when this model fails on Google's side.
+    public var fallback: GeminiModelID {
+        switch self {
+        case .transcribe: return .flashLite
+        case .flashLite:  return .transcribe
+        }
+    }
+}
+
+/// Which model to ask first. A model that just failed on Google's side is skipped
+/// for `cooldown` seconds, so every dictation doesn't pay for the failed round trip.
+public struct GeminiFallbackPolicy {
+    public let cooldown: TimeInterval
+    private var failedAt: [GeminiModelID: Date] = [:]
+
+    public init(cooldown: TimeInterval = 30 * 60) {
+        self.cooldown = cooldown
+    }
+
+    public func order(preferred: GeminiModelID, now: Date = Date()) -> [GeminiModelID] {
+        if let failed = failedAt[preferred], now.timeIntervalSince(failed) < cooldown {
+            return [preferred.fallback, preferred]
+        }
+        return [preferred, preferred.fallback]
+    }
+
+    public mutating func markFailed(_ model: GeminiModelID, now: Date = Date()) {
+        failedAt[model] = now
+    }
+
+    public mutating func markSucceeded(_ model: GeminiModelID) {
+        failedAt[model] = nil
+    }
+}
+
+/// Shown in the HUD pill when the dictation went through the other model.
+public struct ModelFallbackNotice: Equatable {
+    public let failed: GeminiModelID
+    public let used: GeminiModelID
+
+    public init(failed: GeminiModelID, used: GeminiModelID) {
+        self.failed = failed
+        self.used = used
+    }
+
+    public var title: String { "\(failed.shortLabel) unavailable" }
+    public var body: String { "Used \(used.shortLabel) instead" }
 }
 
 /// Why a dictation produced no text, worded for a user notification.
@@ -56,6 +103,13 @@ public enum TranscriptionFailure: Error, Equatable {
         case .unreachable:          return "Check your internet connection"
         case .serviceError:         return "Try again in a moment"
         }
+    }
+
+    /// The model itself is broken or down (bad request, not found, 5xx after a retry),
+    /// so the other model may still work. Key, quota and network errors would hit it too.
+    public var warrantsModelFallback: Bool {
+        if case .serviceError = self { return true }
+        return false
     }
 
     /// How long the HUD keeps the message up.

@@ -113,4 +113,48 @@ final class GeminiAPITests: XCTestCase {
         XCTAssertFalse(GeminiAPI.isRetryable(status: 429))
         XCTAssertFalse(GeminiAPI.isRetryable(status: 400))
     }
+
+    // MARK: Model fallback
+
+    func test_fallbackModel_isTheOtherOne() {
+        XCTAssertEqual(GeminiModelID.transcribe.fallback, .flashLite)
+        XCTAssertEqual(GeminiModelID.flashLite.fallback, .transcribe)
+    }
+
+    func test_fallbackOnlyForModelSideErrors() {
+        XCTAssertTrue(TranscriptionFailure.serviceError(status: 400).warrantsModelFallback)
+        XCTAssertTrue(TranscriptionFailure.serviceError(status: 404).warrantsModelFallback)
+        XCTAssertTrue(TranscriptionFailure.serviceError(status: 503).warrantsModelFallback)
+        XCTAssertFalse(TranscriptionFailure.invalidAPIKey.warrantsModelFallback)
+        XCTAssertFalse(TranscriptionFailure.missingAPIKey.warrantsModelFallback)
+        XCTAssertFalse(TranscriptionFailure.quotaExceeded(daily: true, retryAfterSeconds: nil).warrantsModelFallback)
+        XCTAssertFalse(TranscriptionFailure.unreachable.warrantsModelFallback)
+    }
+
+    func test_fallbackPolicy_preferredFirstUntilItFails() {
+        var policy = GeminiFallbackPolicy(cooldown: 1800)
+        let now = Date(timeIntervalSince1970: 1_000_000)
+        XCTAssertEqual(policy.order(preferred: .transcribe, now: now), [.transcribe, .flashLite])
+
+        policy.markFailed(.transcribe, now: now)
+        XCTAssertEqual(policy.order(preferred: .transcribe, now: now.addingTimeInterval(60)), [.flashLite, .transcribe])
+        // Only the failed model is skipped: picking the other one in Preferences is unaffected.
+        XCTAssertEqual(policy.order(preferred: .flashLite, now: now.addingTimeInterval(60)), [.flashLite, .transcribe])
+        // After the cooldown the preferred model gets another try.
+        XCTAssertEqual(policy.order(preferred: .transcribe, now: now.addingTimeInterval(1801)), [.transcribe, .flashLite])
+    }
+
+    func test_fallbackPolicy_successClearsFailure() {
+        var policy = GeminiFallbackPolicy(cooldown: 1800)
+        let now = Date(timeIntervalSince1970: 1_000_000)
+        policy.markFailed(.transcribe, now: now)
+        policy.markSucceeded(.transcribe)
+        XCTAssertEqual(policy.order(preferred: .transcribe, now: now), [.transcribe, .flashLite])
+    }
+
+    func test_fallbackNotice_namesBothModels() {
+        let notice = ModelFallbackNotice(failed: .transcribe, used: .flashLite)
+        XCTAssertEqual(notice.title, "3.5 Transcribe unavailable")
+        XCTAssertEqual(notice.body, "Used 3.5 Flash-Lite instead")
+    }
 }

@@ -15,6 +15,8 @@ final class TranscriptionCoordinator {
     }
 
     private let engine: TranscriptionEngine
+    /// Gemini answered through the other model; called before the text is inserted.
+    var onModelFallback: ((ModelFallbackNotice) -> Void)?
     private let store: HistoryStore
     /// Tail of the FIFO: each finish waits for the previous one so two transcriptions
     /// never share the WhisperKit instance and text is inserted in dictation order.
@@ -40,8 +42,9 @@ final class TranscriptionCoordinator {
         let startNs = DispatchTime.now().uptimeNanoseconds
         let result: (text: String, language: String?, durationMs: Int)
         switch await engine.finalize(samples: samples) {
-        case .text(let text, let language, let durationMs):
+        case .text(let text, let language, let durationMs, let fallback):
             result = (text, language, durationMs)
+            if let fallback { onModelFallback?(fallback) }
         case .empty:
             return .empty
         case .failed(let failure):

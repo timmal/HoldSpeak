@@ -72,12 +72,14 @@ struct HUDPillView: View {
 struct HUDMessageView: View {
     let title: String
     let detail: String
+    var symbol = "exclamationmark.triangle.fill"
+    var tint: Color = .orange
 
     var body: some View {
         HStack(spacing: 10) {
-            Image(systemName: "exclamationmark.triangle.fill")
+            Image(systemName: symbol)
                 .font(.system(size: 13))
-                .foregroundColor(.orange)
+                .foregroundColor(tint)
             VStack(alignment: .leading, spacing: 1) {
                 Text(title)
                     .font(.system(size: 12, weight: .semibold))
