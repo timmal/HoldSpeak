@@ -66,7 +66,7 @@ targets:
         CFBundleName: HoldSpeak
         CFBundleIconFile: AppIcon
         CFBundleIconName: AppIcon
-        CFBundleShortVersionString: "0.3.2"
+        CFBundleShortVersionString: "0.3.3"
         CFBundleVersion: "1"
         NSMicrophoneUsageDescription: HoldSpeak records your speech while you hold the hotkey and turns it into text.
         NSHumanReadableCopyright: ""
@@ -79,6 +79,6 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.timmal.push-to-talk
         SWIFT_OBJC_BRIDGING_HEADER: Sources/App/HoldSpeak-Bridging-Header.h
-        MARKETING_VERSION: "0.3.2"
+        MARKETING_VERSION: "0.3.3"
         CURRENT_PROJECT_VERSION: "1"
         GENERATE_INFOPLIST_FILE: NO
