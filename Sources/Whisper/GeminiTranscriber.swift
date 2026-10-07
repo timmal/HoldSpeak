@@ -19,7 +19,7 @@ final class GeminiTranscriber {
             .entries(for: language ?? TerminologyStore.shared.activeLanguage)
             .map(\.canonical)
         let wav = GeminiAPI.wav(trimmed)
-        let prompt = GeminiAPI.prompt(language: language, terms: terms)
+        let prompt = GeminiAPI.prompt(language: language, terms: terms, removeFillers: prefs.removeFillers)
         let preferred = prefs.geminiModel
         let models = fallbackPolicy.order(preferred: preferred)
         if models.first != preferred {

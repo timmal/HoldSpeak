@@ -63,7 +63,9 @@ final class TranscriptionCoordinator {
             terminology: TerminologyStore.shared.entries(for: lang),
             autoPunctuation: prefs.autoPunctuation,
             autoCapitalize: prefs.autoCapitalize,
-            dropHallucinations: prefs.engine == .whisper
+            dropHallucinations: prefs.engine == .whisper,
+            fillers: prefs.removeFillers && prefs.engine == .whisper
+                ? TextCleaner.parseFillers(prefs.fillerWords) : []
         )
         pttLog("cleaned: \(logText(cleaned))")
         guard !cleaned.isEmpty else { return .empty }

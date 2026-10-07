@@ -119,6 +119,9 @@ public final class PreferencesStore: ObservableObject {
     @AppStorage("appTheme")        public var appTheme: AppTheme = .auto
     @AppStorage("autoPunctuation") public var autoPunctuation: Bool = true
     @AppStorage("autoCapitalize")  public var autoCapitalize: Bool = true
+    @AppStorage("removeFillers")   public var removeFillers: Bool = false
+    /// Whisper only; Gemini drops fillers by context instead of a list.
+    @AppStorage("fillerWords")     public var fillerWords: String = TextCleaner.defaultFillers
     @AppStorage("metricsResetAtMs") public var metricsResetAtMs: Int = 0
     @AppStorage("inputDevice")     private var inputDeviceRaw: String = InputSelection.avoidBluetooth.rawValue
 

@@ -75,9 +75,10 @@ public enum TextCleaner {
         terminology: [TerminologyEntry] = [],
         autoPunctuation: Bool = true,
         autoCapitalize: Bool = true,
-        dropHallucinations: Bool = true
+        dropHallucinations: Bool = true,
+        fillers: [String] = []
     ) -> String {
-        var s = input
+        var s = removeFillers(input, fillers: fillers)
         for rule in rules {
             let range = NSRange(s.startIndex..., in: s)
             s = rule.regex.stringByReplacingMatches(in: s, range: range, withTemplate: rule.replacement)
@@ -101,6 +102,57 @@ public enum TextCleaner {
         }
         return s
     }
+
+    // MARK: - Filler words
+
+    /// Prefilled list for Whisper. Leaves out words that often carry meaning
+    /// («объект типа Promise», «вот файл», "I like it").
+    public static let defaultFillers = "э, эм, мм, ну, короче, как бы, это самое, в общем-то, uh, um, er, you know, I mean"
+
+    /// Splits the user's list on commas and newlines.
+    public static func parseFillers(_ text: String) -> [String] {
+        text.split(whereSeparator: { $0 == "," || $0.isNewline })
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty }
+    }
+
+    /// Drops whole-word fillers with the comma or period right after them. A
+    /// capitalized filler hands its capital to the next word, so "Ну, давай"
+    /// becomes "Давай".
+    static func removeFillers(_ input: String, fillers: [String]) -> String {
+        let alternatives = fillers
+            .map { $0.split(whereSeparator: \.isWhitespace).map { NSRegularExpression.escapedPattern(for: String($0)) } }
+            .filter { !$0.isEmpty }
+            .sorted { $0.count > $1.count }
+            .map { $0.joined(separator: #"\s+"#) }
+        guard !alternatives.isEmpty else { return input }
+        let pattern = #"(?<![\p{L}\p{N}])(?:"# + alternatives.joined(separator: "|") + #")(?![\p{L}\p{N}])[,;.…]?\s*"#
+        guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) else { return input }
+
+        let out = NSMutableString(string: input)
+        let matches = regex.matches(in: input, range: NSRange(location: 0, length: out.length))
+        guard !matches.isEmpty else { return input }
+        for match in matches.reversed() {
+            let capitalized = out.substring(with: match.range).first?.isUppercase == true
+            out.replaceCharacters(in: match.range, with: "")
+            if capitalized, match.range.location < out.length {
+                let next = out.rangeOfComposedCharacterSequence(at: match.range.location)
+                out.replaceCharacters(in: next, with: out.substring(with: next).uppercased())
+            }
+        }
+        var s = out as String
+        for (pattern, template) in fillerPunctuationFixes {
+            s = s.replacingOccurrences(of: pattern, with: template, options: .regularExpression)
+        }
+        return s
+    }
+
+    /// Commas a removed filler leaves behind: ", ." → ".", trailing ",", " ,".
+    private static let fillerPunctuationFixes: [(String, String)] = [
+        (#"[,;]\s*([.!?…]|$)"#, "$1"),
+        (#"[,;]\s*[,;]"#, ","),
+        (#"\s+([,;.!?…])"#, "$1"),
+    ]
 
     private static func canonicalize(_ input: String, terminology: [TerminologyEntry]) -> String {
         var s = input

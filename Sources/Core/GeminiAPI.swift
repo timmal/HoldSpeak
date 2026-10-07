@@ -152,9 +152,13 @@ public enum GeminiAPI {
 
     /// `language` is a two-letter code, nil for auto-detect. `terms` are canonical
     /// spellings from the terminology dictionary.
-    public static func prompt(language: String?, terms: [String]) -> String {
+    public static func prompt(language: String?, terms: [String], removeFillers: Bool = false) -> String {
         var lines = [
-            "Transcribe this speech verbatim, with natural punctuation.",
+            removeFillers
+                ? "Transcribe this speech with natural punctuation. Drop filler words and hesitations "
+                    + "(э, эм, ну, типа, короче, как бы, вот, um, uh, like, you know) where they carry no meaning, "
+                    + "but keep them where they do (\"объект типа Promise\", \"I like it\"). Otherwise keep the wording as spoken."
+                : "Transcribe this speech verbatim, with natural punctuation.",
             "Output only the transcript — no comments, no quotes. If there is no speech, output nothing.",
             "Keep technical terms, product names and English words in their original Latin spelling.",
         ]

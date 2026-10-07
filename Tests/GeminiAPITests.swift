@@ -40,6 +40,15 @@ final class GeminiAPITests: XCTestCase {
         XCTAssertFalse(prompt.contains("Vocabulary"))
     }
 
+    func test_prompt_fillerRemoval() {
+        let verbatim = GeminiAPI.prompt(language: "ru", terms: [])
+        XCTAssertTrue(verbatim.contains("verbatim"))
+        XCTAssertFalse(verbatim.contains("filler"))
+        let clean = GeminiAPI.prompt(language: "ru", terms: [], removeFillers: true)
+        XCTAssertFalse(clean.contains("verbatim"))
+        XCTAssertTrue(clean.contains("filler words"))
+    }
+
     func test_requestBody_thinkingConfigOnlyForFlashLite() throws {
         func config(_ model: GeminiModelID) throws -> [String: Any] {
             let body = try GeminiAPI.requestBody(model: model, prompt: "p", wav: Data([1, 2]))

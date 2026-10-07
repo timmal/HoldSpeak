@@ -443,6 +443,34 @@ struct PreferencesView: View {
                 .toggleStyle(.checkbox)
                 .controlSize(.small)
             }
+
+            labeledRow("", alignment: .top) {
+                VStack(alignment: .leading, spacing: 8) {
+                    Toggle(isOn: $prefs.removeFillers) {
+                        Text("Remove filler words")
+                            .font(.system(size: 13))
+                            .foregroundColor(PTT.textBody(scheme))
+                    }
+                    .toggleStyle(.checkbox)
+                    .controlSize(.small)
+
+                    if prefs.removeFillers {
+                        if prefs.engine == .whisper {
+                            TextField("ну, короче, um", text: $prefs.fillerWords, axis: .vertical)
+                                .textFieldStyle(.roundedBorder)
+                                .lineLimit(2...4)
+                                .frame(width: 280)
+                            Text("Comma-separated. Whole words only, any case.")
+                                .font(.system(size: 11))
+                                .foregroundColor(PTT.textSoft(scheme))
+                        } else {
+                            Text("Gemini drops them by context and keeps the ones that carry meaning.")
+                                .font(.system(size: 11))
+                                .foregroundColor(PTT.textSoft(scheme))
+                        }
+                    }
+                }
+            }
         }
     }
 

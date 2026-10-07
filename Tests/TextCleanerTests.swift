@@ -109,4 +109,46 @@ final class TextCleanerTests: XCTestCase {
         XCTAssertEqual(TextCleaner.clean("Готово.", dropHallucinations: false), "Готово.")
         XCTAssertEqual(TextCleaner.clean("Готово.", autoPunctuation: false, dropHallucinations: false), "Готово")
     }
+
+    // MARK: Filler words
+
+    func test_fillers_offByDefault() {
+        XCTAssertEqual(TextCleaner.clean("ну, короче, давай"), "Ну, короче, давай.")
+    }
+    func test_fillers_removedAtStart_nextWordCapitalized() {
+        XCTAssertEqual(TextCleaner.clean("Ну, короче, давай созвонимся", fillers: ["ну", "короче"]),
+                       "Давай созвонимся.")
+    }
+    func test_fillers_removedMidSentence_keepsGrammarComma() {
+        XCTAssertEqual(TextCleaner.clean("я думаю, ну, что это хорошо", fillers: ["ну"]),
+                       "Я думаю, что это хорошо.")
+    }
+    func test_fillers_afterSentenceEnd_capitalizesNextSentence() {
+        XCTAssertEqual(TextCleaner.clean("Сделал. Ну, потом пошёл", fillers: ["ну"]),
+                       "Сделал. Потом пошёл.")
+    }
+    func test_fillers_atEnd_leaveNoDanglingComma() {
+        XCTAssertEqual(TextCleaner.clean("Давай завтра, короче.", fillers: ["короче"]), "Давай завтра.")
+        XCTAssertEqual(TextCleaner.clean("Давай завтра, короче", autoPunctuation: false, fillers: ["короче"]),
+                       "Давай завтра")
+    }
+    func test_fillers_multiWordAndCaseInsensitive() {
+        XCTAssertEqual(TextCleaner.clean("Это  самое, I MEAN we ship it", fillers: ["это самое", "i mean"]),
+                       "We ship it.")
+    }
+    func test_fillers_matchWholeWordsOnly() {
+        XCTAssertEqual(TextCleaner.clean("нужно ну и всё", fillers: ["ну"]), "Нужно и всё.")
+        XCTAssertEqual(TextCleaner.clean("в общем-то готово", fillers: ["в общем-то"]), "Готово.")
+    }
+    func test_fillers_onlyFillersYieldsEmpty() {
+        XCTAssertEqual(TextCleaner.clean("Ну, короче.", fillers: ["ну", "короче"]), "")
+    }
+    func test_parseFillers_splitsOnCommasAndNewlines() {
+        XCTAssertEqual(TextCleaner.parseFillers(" ну, короче ,,\nкак бы\n "), ["ну", "короче", "как бы"])
+    }
+    func test_defaultFillers_parse() {
+        let list = TextCleaner.parseFillers(TextCleaner.defaultFillers)
+        XCTAssertTrue(list.contains("ну"))
+        XCTAssertFalse(list.contains("типа"), "ambiguous: «объект типа Promise»")
+    }
 }
