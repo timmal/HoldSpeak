@@ -10,3 +10,6 @@ dist/
 *.dmg
 HoldSpeak.xcodeproj/
 docs/superpowers/
+
+# Local agent instructions
+CLAUDE.md
