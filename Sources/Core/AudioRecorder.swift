@@ -1,24 +1,29 @@
+import AudioToolbox
 import AVFoundation
 import Combine
 import CoreAudio
-#if SWIFT_PACKAGE
-import ObjCCatch
-#endif
 
 public enum AudioRecorderError: Error {
     case invalidInputFormat(sampleRate: Double, channels: UInt32)
-    /// The input device changed format while capture was starting.
-    case formatChanged
+    /// No input device is connected.
+    case noInputDevice
+    /// A CoreAudio call returned an error.
+    case coreAudio(operation: String, status: OSStatus)
     /// A CoreAudio call did not return within the watchdog timeout.
     case stalled(operation: String)
 }
 
 /// Captures microphone audio as 16 kHz mono chunks.
 ///
-/// All AVAudioEngine / CoreAudio work runs on a private serial queue: after sleep/wake
-/// or an audio route change HAL calls can block for hours, and doing them on the main
-/// thread froze the whole app (and got the hotkey event tap disabled). A watchdog
-/// abandons a wedged capture and continues with a fresh engine on a fresh queue.
+/// Uses an input-only AUHAL rather than AVAudioEngine: the engine's shared IO unit binds
+/// the system default input before a device can be chosen, so with Bluetooth headphones
+/// as the default it switched them to the headset (HFP) profile — beep, 16 kHz music —
+/// even when the built-in mic was selected.
+///
+/// All CoreAudio work runs on a private serial queue: after sleep/wake or an audio route
+/// change HAL calls can block for hours, and doing them on the main thread froze the
+/// whole app (and got the hotkey event tap disabled). A watchdog abandons a wedged
+/// capture and continues with a fresh one on a fresh queue.
 ///
 /// Public methods must be called on the main thread; `failures` is delivered on main.
 public final class AudioRecorder {
@@ -66,7 +71,7 @@ public final class AudioRecorder {
             guard let self, !op.finished else { return }
             op.finished = true
             if self.capture === c {
-                pttLog("AudioRecorder: \(label) stalled >\(self.watchdogTimeout)s — abandoning audio engine")
+                pttLog("AudioRecorder: \(label) stalled >\(self.watchdogTimeout)s — abandoning audio capture")
                 c.abandon()
                 self.capture = Capture(amplitude: self.amplitude, chunks: self.chunks, failures: self.failures)
                 self.failures.send(AudioRecorderError.stalled(operation: label))
@@ -76,10 +81,83 @@ public final class AudioRecorder {
     }
 }
 
-/// One engine plus the serial queue that owns it. Every method except `abandon()`
+/// Render state owned by the HAL IO thread while the unit runs. Accumulates the
+/// device's ~10 ms IO cycles into ~100 ms chunks so downstream work stays coarse.
+private final class InputTap {
+    let unit: AudioUnit
+    let device: AudioDeviceID
+    /// Client format: the device's own rate and channel count, Float32 non-interleaved.
+    /// AUHAL cannot resample on the input side, so the converter downstream does it.
+    let format: AVAudioFormat
+    /// Render failures since the last `takeRenderErrors()`; touched only by the IO thread
+    /// and by the owner while the unit is stopped.
+    private var renderErrors = 0
+    private let scratch: AVAudioPCMBuffer
+    private var pending: AVAudioPCMBuffer
+    private let chunkFrames: AVAudioFrameCount
+    private let deliver: (AVAudioPCMBuffer) -> Void
+
+    init(unit: AudioUnit, device: AudioDeviceID, format: AVAudioFormat, maxFrames: AVAudioFrameCount,
+         deliver: @escaping (AVAudioPCMBuffer) -> Void) {
+        self.unit = unit
+        self.device = device
+        self.format = format
+        self.deliver = deliver
+        chunkFrames = AVAudioFrameCount(max(format.sampleRate / 10, 256))
+        scratch = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: maxFrames)!
+        pending = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: chunkFrames)!
+    }
+
+    func render(_ flags: UnsafeMutablePointer<AudioUnitRenderActionFlags>,
+                _ timeStamp: UnsafePointer<AudioTimeStamp>,
+                _ frames: UInt32) -> OSStatus {
+        guard frames <= scratch.frameCapacity else { renderErrors += 1; return noErr }
+        scratch.frameLength = frames
+        let status = AudioUnitRender(unit, flags, timeStamp, 1, frames, scratch.mutableAudioBufferList)
+        guard status == noErr else { renderErrors += 1; return status }
+        append(scratch)
+        return noErr
+    }
+
+    private func append(_ src: AVAudioPCMBuffer) {
+        guard let from = src.floatChannelData else { return }
+        let channels = Int(format.channelCount)
+        var offset: AVAudioFrameCount = 0
+        while offset < src.frameLength {
+            let n = min(src.frameLength - offset, chunkFrames - pending.frameLength)
+            let to = pending.floatChannelData!
+            for c in 0..<channels {
+                memcpy(to[c] + Int(pending.frameLength), from[c] + Int(offset), Int(n) * MemoryLayout<Float>.size)
+            }
+            pending.frameLength += n
+            offset += n
+            if pending.frameLength == chunkFrames { flush() }
+        }
+    }
+
+    /// Hands over the partial chunk. Call only from the IO thread or while the unit is stopped.
+    func flush() {
+        guard pending.frameLength > 0 else { return }
+        deliver(pending)
+        pending = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: chunkFrames)!
+    }
+
+    func takeRenderErrors() -> Int {
+        defer { renderErrors = 0 }
+        return renderErrors
+    }
+}
+
+private let inputCallback: AURenderCallback = { refCon, flags, timeStamp, _, frames, _ in
+    Unmanaged<InputTap>.fromOpaque(refCon).takeUnretainedValue().render(flags, timeStamp, frames)
+}
+
+/// One input unit plus the serial queue that owns it. Every method except `abandon()`
 /// runs on `queue`.
 private final class Capture {
     let queue = DispatchQueue(label: "HoldSpeak.audio", qos: .userInitiated)
+    /// Converts and publishes chunks off the IO thread.
+    private let delivery = DispatchQueue(label: "HoldSpeak.audio.delivery", qos: .userInitiated)
 
     private let amplitude: PassthroughSubject<Float, Never>
     private let chunks: PassthroughSubject<AVAudioPCMBuffer, Never>
@@ -87,14 +165,17 @@ private final class Capture {
     private static let targetFormat = AVAudioFormat(commonFormat: .pcmFormatFloat32,
                                                     sampleRate: 16_000, channels: 1, interleaved: false)!
 
-    private var engine: AVAudioEngine?
-    private var engineDevice: AudioDeviceID?
-    private var configObserver: NSObjectProtocol?
+    private var tap: InputTap?
+    private var deviceListener: AudioObjectPropertyListenerBlock?
     private var input: InputSelection = .systemDefault
     private var isRecording = false
-    private var tapFormat: AVAudioFormat?
     /// Device whose input mute we lifted in `start`; re-muted in `stop`.
     private var mutedDevice: AudioDeviceID?
+
+    // Delivery-queue state.
+    private var monoFormat: AVAudioFormat?
+    private var converter: AVAudioConverter?
+    private var chunkCount = 0
 
     private let abandonLock = NSLock()
     private var _abandoned = false
@@ -115,18 +196,20 @@ private final class Capture {
         queue.async { [self] in
             teardown()
             restoreMute()
-            dropEngine()
+            dropTap()
         }
     }
 
     func start(input: InputSelection) throws {
         guard !abandoned, !isRecording else { return }
         self.input = input
-        let device = InputDevice.resolve(input)
-        if device != engineDevice { dropEngine() }
-        unmuteIfNeeded(device ?? InputDevice.defaultID())
+        guard let device = InputDevice.resolve(input) ?? InputDevice.defaultID() else {
+            throw AudioRecorderError.noInputDevice
+        }
+        if device != tap?.device { dropTap() }
+        unmuteIfNeeded(device)
         do {
-            try startEngine(device: device)
+            try startTap(device: device)
         } catch {
             restoreMute()
             throw error
@@ -138,154 +221,196 @@ private final class Capture {
         restoreMute()
     }
 
-    // MARK: - Engine
+    // MARK: - Input unit
 
-    private func makeEngine(device: AudioDeviceID?) -> AVAudioEngine {
-        let engine = AVAudioEngine()
-        if let device, let unit = engine.inputNode.audioUnit {
+    private func makeTap(device: AudioDeviceID) throws -> InputTap {
+        var desc = AudioComponentDescription(componentType: kAudioUnitType_Output,
+                                             componentSubType: kAudioUnitSubType_HALOutput,
+                                             componentManufacturer: kAudioUnitManufacturer_Apple,
+                                             componentFlags: 0, componentFlagsMask: 0)
+        guard let component = AudioComponentFindNext(nil, &desc) else {
+            throw AudioRecorderError.coreAudio(operation: "find AUHAL", status: kAudioUnitErr_InvalidElement)
+        }
+        var newUnit: AudioUnit?
+        try check(AudioComponentInstanceNew(component, &newUnit), "create AUHAL")
+        guard let unit = newUnit else {
+            throw AudioRecorderError.coreAudio(operation: "create AUHAL", status: kAudioUnitErr_FailedInitialization)
+        }
+        do {
+            // Input only, device chosen before initialize: nothing but `device` is ever opened.
+            var off: UInt32 = 0, on: UInt32 = 1
+            try check(AudioUnitSetProperty(unit, kAudioOutputUnitProperty_EnableIO, kAudioUnitScope_Output, 0,
+                                           &off, UInt32(MemoryLayout<UInt32>.size)), "disable output")
+            try check(AudioUnitSetProperty(unit, kAudioOutputUnitProperty_EnableIO, kAudioUnitScope_Input, 1,
+                                           &on, UInt32(MemoryLayout<UInt32>.size)), "enable input")
             var id = device
-            let status = AudioUnitSetProperty(unit, kAudioOutputUnitProperty_CurrentDevice,
-                                              kAudioUnitScope_Global, 0, &id,
-                                              UInt32(MemoryLayout<AudioDeviceID>.size))
-            if status != noErr {
-                pttLog("AudioRecorder: selecting input device \(device) failed (\(status)) — using system default")
-            } else {
-                // After an explicit device switch the unit keeps the engine rate (taken from the
-                // output device) as its client format; if the two differ (48 kHz mic + 44.1 kHz
-                // Bluetooth speakers) the tap never receives buffers. Capture at the mic's own rate.
-                var asbd = engine.inputNode.inputFormat(forBus: 0).streamDescription.pointee
-                let fmtStatus = AudioUnitSetProperty(unit, kAudioUnitProperty_StreamFormat,
-                                                     kAudioUnitScope_Output, 1, &asbd,
-                                                     UInt32(MemoryLayout<AudioStreamBasicDescription>.size))
-                if fmtStatus != noErr { pttLog("AudioRecorder: aligning client format to device failed (\(fmtStatus))") }
+            try check(AudioUnitSetProperty(unit, kAudioOutputUnitProperty_CurrentDevice, kAudioUnitScope_Global, 0,
+                                           &id, UInt32(MemoryLayout<AudioDeviceID>.size)), "select device")
+
+            var deviceFormat = AudioStreamBasicDescription()
+            var size = UInt32(MemoryLayout<AudioStreamBasicDescription>.size)
+            try check(AudioUnitGetProperty(unit, kAudioUnitProperty_StreamFormat, kAudioUnitScope_Input, 1,
+                                           &deviceFormat, &size), "read device format")
+            pttLog("AudioRecorder device format: sampleRate=\(deviceFormat.mSampleRate) channels=\(deviceFormat.mChannelsPerFrame)")
+            guard deviceFormat.mSampleRate > 0, deviceFormat.mChannelsPerFrame > 0,
+                  let format = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: deviceFormat.mSampleRate,
+                                             channels: deviceFormat.mChannelsPerFrame, interleaved: false) else {
+                throw AudioRecorderError.invalidInputFormat(sampleRate: deviceFormat.mSampleRate,
+                                                            channels: deviceFormat.mChannelsPerFrame)
             }
-        }
-        configObserver = NotificationCenter.default.addObserver(
-            forName: .AVAudioEngineConfigurationChange, object: engine, queue: nil
-        ) { [weak self] _ in
-            self?.queue.async { self?.handleConfigurationChange() }
-        }
-        self.engine = engine
-        engineDevice = device
-        return engine
-    }
+            var client = format.streamDescription.pointee
+            try check(AudioUnitSetProperty(unit, kAudioUnitProperty_StreamFormat, kAudioUnitScope_Output, 1,
+                                           &client, size), "set client format")
 
-    private func dropEngine() {
-        if let obs = configObserver { NotificationCenter.default.removeObserver(obs) }
-        configObserver = nil
-        engine = nil
-        engineDevice = nil
-    }
-
-    private func startEngine(device: AudioDeviceID?) throws {
-        // A Bluetooth device can switch sample rate between reading the format and
-        // installing the tap; a fresh engine picks up the new format, so retry once.
-        do {
-            try startEngineOnce(device: device)
-        } catch AudioRecorderError.formatChanged {
-            pttLog("AudioRecorder: input format changed during start — retrying with a fresh engine")
-            try startEngineOnce(device: device)
-        }
-    }
-
-    private func startEngineOnce(device: AudioDeviceID?) throws {
-        let engine = self.engine ?? makeEngine(device: device)
-        let inputNode = engine.inputNode
-        let hwFormat = inputNode.outputFormat(forBus: 0)
-        let deviceRate = inputNode.inputFormat(forBus: 0).sampleRate
-        pttLog("AudioRecorder hwFormat: sampleRate=\(hwFormat.sampleRate) channels=\(hwFormat.channelCount) device=\(deviceRate)")
-        guard hwFormat.sampleRate > 0, hwFormat.channelCount > 0 else {
-            dropEngine()
-            throw AudioRecorderError.invalidInputFormat(sampleRate: hwFormat.sampleRate,
-                                                        channels: hwFormat.channelCount)
-        }
-        // deviceRate may legitimately differ from hwFormat: the input unit resamples to the
-        // engine rate (e.g. 48 kHz mic + 44.1 kHz Bluetooth speakers). A real mid-start
-        // format switch surfaces as an installTap exception below.
-        let monoHW = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: hwFormat.sampleRate,
-                                   channels: 1, interleaved: false)!
-        guard let converter = AVAudioConverter(from: monoHW, to: Self.targetFormat) else {
-            dropEngine()
-            throw AudioRecorderError.invalidInputFormat(sampleRate: hwFormat.sampleRate,
-                                                        channels: hwFormat.channelCount)
-        }
-
-        var tapCount = 0
-        var objcError: NSError?
-        let installed = HSCatchObjCException({
-            inputNode.removeTap(onBus: 0)
-            inputNode.installTap(onBus: 0, bufferSize: 4096, format: hwFormat) { [weak self] buffer, _ in
-                guard let self, !self.abandoned else { return }
-                tapCount += 1
-                if tapCount <= 3 || tapCount % 50 == 0 {
-                    pttLog("tap #\(tapCount) frames=\(buffer.frameLength) rms=\(Self.rms(buffer))")
-                }
-                guard let out = Self.convert(buffer, monoFormat: monoHW, converter: converter) else { return }
-                self.amplitude.send(Self.rms(out))
-                self.chunks.send(out)
+            var maxFrames: UInt32 = 4096
+            var maxSize = UInt32(MemoryLayout<UInt32>.size)
+            _ = AudioUnitGetProperty(unit, kAudioUnitProperty_MaximumFramesPerSlice, kAudioUnitScope_Global, 0,
+                                     &maxFrames, &maxSize)
+            let tap = InputTap(unit: unit, device: device, format: format,
+                               maxFrames: max(maxFrames, 4096)) { [weak self] chunk in
+                self?.delivery.async { self?.publish(chunk) }
             }
-            engine.prepare()
-        }, &objcError)
-        guard installed else {
-            pttLog("AudioRecorder: installTap raised \(objcError?.localizedDescription ?? "?") — rebuilding engine")
-            dropEngine()
-            throw AudioRecorderError.formatChanged
-        }
-        do {
-            var startError: NSError?
-            var thrown: Error?
-            if !HSCatchObjCException({
-                do { try engine.start() } catch { thrown = error }
-            }, &startError) {
-                throw startError ?? AudioRecorderError.formatChanged
-            }
-            if let thrown { throw thrown }
+            var callback = AURenderCallbackStruct(inputProc: inputCallback,
+                                                  inputProcRefCon: Unmanaged.passUnretained(tap).toOpaque())
+            try check(AudioUnitSetProperty(unit, kAudioOutputUnitProperty_SetInputCallback, kAudioUnitScope_Global, 0,
+                                           &callback, UInt32(MemoryLayout<AURenderCallbackStruct>.size)),
+                      "set input callback")
+            try check(AudioUnitInitialize(unit), "initialize")
+            return tap
         } catch {
-            pttLog("engine.start failed: \(error) — rebuilding engine")
-            _ = HSCatchObjCException({ inputNode.removeTap(onBus: 0) }, nil)
-            dropEngine()
+            AudioComponentInstanceDispose(unit)
             throw error
         }
-        tapFormat = hwFormat
+    }
+
+    private func dropTap() {
+        guard let tap else { return }
+        unwatch(tap.device)
+        AudioUnitUninitialize(tap.unit)
+        AudioComponentInstanceDispose(tap.unit)
+        self.tap = nil
+    }
+
+    private func startTap(device: AudioDeviceID) throws {
+        // A Bluetooth device can switch sample rate between reading the format and
+        // starting; a fresh unit picks up the new format, so retry once.
+        do {
+            try startTapOnce(device: device)
+        } catch {
+            pttLog("AudioRecorder: start failed (\(error)) — retrying with a fresh input unit")
+            dropTap()
+            try startTapOnce(device: device)
+        }
+    }
+
+    private func startTapOnce(device: AudioDeviceID) throws {
+        let tap = try self.tap ?? makeTap(device: device)
+        if self.tap == nil {
+            self.tap = tap
+            watch(device)
+        }
+        let format = tap.format
+        let ready = delivery.sync {
+            monoFormat = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: format.sampleRate,
+                                       channels: 1, interleaved: false)
+            converter = monoFormat.flatMap { AVAudioConverter(from: $0, to: Self.targetFormat) }
+            chunkCount = 0
+            return converter != nil
+        }
+        guard ready else {
+            dropTap()
+            throw AudioRecorderError.invalidInputFormat(sampleRate: format.sampleRate, channels: format.channelCount)
+        }
+        do {
+            try check(AudioOutputUnitStart(tap.unit), "start")
+        } catch {
+            dropTap()
+            throw error
+        }
         isRecording = true
     }
 
+    /// Stops the unit and waits until every captured chunk has been published, so a
+    /// completion dispatched to main afterwards runs after the last chunk.
     private func teardown() {
-        guard isRecording, let engine else { isRecording = false; return }
-        _ = HSCatchObjCException({
-            engine.inputNode.removeTap(onBus: 0)
-            engine.stop()
-        }, nil)
+        guard isRecording, let tap else { isRecording = false; return }
+        AudioOutputUnitStop(tap.unit)
+        tap.flush()
+        let errors = tap.takeRenderErrors()
+        if errors > 0 { pttLog("AudioRecorder: \(errors) render errors during capture") }
+        delivery.sync {}
         isRecording = false
     }
 
-    /// Bluetooth headsets switch profile (e.g. A2DP → HFP, 48 kHz → 16/24 kHz) once the mic
-    /// opens, and devices come and go on sleep/wake. The old engine is unusable either way,
-    /// so rebuild; mid-recording, resume capture so the take isn't silently dropped.
-    private func handleConfigurationChange() {
-        guard !abandoned else { return }
-        // Selecting a specific device fires a change right after start while the engine
-        // keeps running in the same format — rebuilding then would drop the first second.
-        if let engine, engine.isRunning, let tapFormat,
-           engine.inputNode.outputFormat(forBus: 0).sampleRate == tapFormat.sampleRate,
-           engine.inputNode.outputFormat(forBus: 0).channelCount == tapFormat.channelCount {
-            pttLog("AVAudioEngineConfigurationChange ignored (engine still running, format unchanged)")
+    private func check(_ status: OSStatus, _ operation: String) throws {
+        guard status != noErr else { return }
+        pttLog("AudioRecorder: \(operation) failed (\(status))")
+        throw AudioRecorderError.coreAudio(operation: operation, status: status)
+    }
+
+    // MARK: - Device changes
+
+    private static let watchedProperties = [kAudioDevicePropertyNominalSampleRate, kAudioDevicePropertyDeviceIsAlive]
+
+    private func watch(_ device: AudioDeviceID) {
+        let listener: AudioObjectPropertyListenerBlock = { [weak self] _, _ in self?.handleDeviceChange() }
+        for selector in Self.watchedProperties {
+            var addr = AudioObjectPropertyAddress(mSelector: selector, mScope: kAudioObjectPropertyScopeGlobal,
+                                                  mElement: kAudioObjectPropertyElementMain)
+            AudioObjectAddPropertyListenerBlock(device, &addr, queue, listener)
+        }
+        deviceListener = listener
+    }
+
+    private func unwatch(_ device: AudioDeviceID) {
+        guard let listener = deviceListener else { return }
+        for selector in Self.watchedProperties {
+            var addr = AudioObjectPropertyAddress(mSelector: selector, mScope: kAudioObjectPropertyScopeGlobal,
+                                                  mElement: kAudioObjectPropertyElementMain)
+            AudioObjectRemovePropertyListenerBlock(device, &addr, queue, listener)
+        }
+        deviceListener = nil
+    }
+
+    /// Bluetooth headsets switch sample rate when their mic opens (A2DP → HFP), and
+    /// devices vanish on disconnect or sleep. The unit's client format no longer matches
+    /// either way, so rebuild; mid-recording, resume so the take isn't silently dropped.
+    private func handleDeviceChange() {
+        guard !abandoned, let tap else { return }
+        if InputDevice.isAlive(tap.device), InputDevice.nominalSampleRate(tap.device) == tap.format.sampleRate {
             return
         }
-        pttLog("AVAudioEngineConfigurationChange (recording=\(isRecording)) — resetting engine")
+        pttLog("AudioRecorder: input device changed (recording=\(isRecording)) — rebuilding input unit")
         let wasRecording = isRecording
         teardown()
-        dropEngine()
+        dropTap()
         guard wasRecording else { return }
         do {
-            try startEngine(device: InputDevice.resolve(input))
-            pttLog("AudioRecorder: capture resumed after configuration change")
+            guard let device = InputDevice.resolve(input) ?? InputDevice.defaultID() else {
+                throw AudioRecorderError.noInputDevice
+            }
+            try startTap(device: device)
+            pttLog("AudioRecorder: capture resumed after device change")
         } catch {
-            pttLog("AudioRecorder: resume after configuration change failed: \(error)")
+            pttLog("AudioRecorder: resume after device change failed: \(error)")
             restoreMute()
             let failures = self.failures
             DispatchQueue.main.async { failures.send(error) }
         }
+    }
+
+    // MARK: - Delivery
+
+    private func publish(_ chunk: AVAudioPCMBuffer) {
+        guard !abandoned, let monoFormat, let converter,
+              chunk.format.sampleRate == monoFormat.sampleRate else { return }
+        chunkCount += 1
+        if chunkCount <= 3 || chunkCount % 50 == 0 {
+            pttLog("chunk #\(chunkCount) frames=\(chunk.frameLength) rms=\(Self.rms(chunk))")
+        }
+        guard let out = Self.convert(chunk, monoFormat: monoFormat, converter: converter) else { return }
+        amplitude.send(Self.rms(out))
+        chunks.send(out)
     }
 
     // MARK: - Device mute

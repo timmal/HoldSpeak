@@ -31,7 +31,7 @@ public enum InputSelection: Equatable, Hashable {
 /// Thin CoreAudio helpers for the system default input device.
 ///
 /// Bluetooth headsets (AirPods in particular) can carry a device-level input mute
-/// set by a call app or a stem press. AVAudioEngine then delivers pure zeros, so
+/// set by a call app or a stem press. Capture then delivers pure zeros, so
 /// the recorder lifts the mute for the duration of a recording and restores it.
 public enum InputDevice {
     public static func defaultID() -> AudioDeviceID? {
@@ -112,6 +112,16 @@ public enum InputDevice {
         _ = get(id, kAudioDevicePropertyVolumeScalar, kAudioDevicePropertyScopeInput, &volume)
         let muted = isMuted(id).map { "\($0)" } ?? "n/a"
         return "\"\(n)\" transport=\(t) inputVolume=\(volume >= 0 ? String(format: "%.2f", volume) : "n/a") muted=\(muted)"
+    }
+
+    public static func isAlive(_ id: AudioDeviceID) -> Bool {
+        var alive: UInt32 = 0
+        return get(id, kAudioDevicePropertyDeviceIsAlive, kAudioObjectPropertyScopeGlobal, &alive) && alive != 0
+    }
+
+    public static func nominalSampleRate(_ id: AudioDeviceID) -> Double? {
+        var rate: Float64 = 0
+        return get(id, kAudioDevicePropertyNominalSampleRate, kAudioObjectPropertyScopeGlobal, &rate) ? rate : nil
     }
 
     /// `nil` when the device has no input mute control.
