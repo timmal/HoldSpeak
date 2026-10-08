@@ -45,11 +45,11 @@ public final class TranscriptionEngine {
         guard !samples.isEmpty else { pttLog("finalize: samples empty (no audio captured)"); return .empty }
         let rawMs = Int(Double(samples.count) / 16.0)
         guard let trimmed = vad.trimSilence(samples) else {
-            pttLog("finalize: VAD dropped buffer (raw=\(rawMs)ms)")
+            pttLog("finalize: VAD dropped buffer (raw=\(rawMs)ms \(vad.stats(samples)))")
             return .empty
         }
         let durationMs = Int(Double(trimmed.count) / 16.0)
-        pttLog("finalize: VAD raw=\(rawMs)ms → trimmed=\(durationMs)ms")
+        pttLog("finalize: VAD raw=\(rawMs)ms → trimmed=\(durationMs)ms \(vad.stats(samples))")
         switch PreferencesStore.shared.engine {
         case .whisper: return await whisper.transcribe(trimmed, durationMs: durationMs)
         case .gemini:  return await gemini.transcribe(trimmed, durationMs: durationMs)

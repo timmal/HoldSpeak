@@ -52,6 +52,10 @@ final class TranscriptionCoordinator {
         }
         let elapsedMs = (DispatchTime.now().uptimeNanoseconds - startNs) / 1_000_000
         pttLog("result raw: \(logText(result.text)) lang=\(result.language ?? "?") durMs=\(result.durationMs) elapsedMs=\(elapsedMs)")
+        if TextCleaner.isImplausiblyLong(result.text, durationMs: result.durationMs) {
+            pttLog("result dropped: too long for \(result.durationMs)ms of audio")
+            return .empty
+        }
 
         let prefs = PreferencesStore.shared
         let lang = result.language ?? prefs.primaryLanguage.whisperCode ?? TerminologyStore.shared.activeLanguage

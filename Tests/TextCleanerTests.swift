@@ -151,4 +151,19 @@ final class TextCleanerTests: XCTestCase {
         XCTAssertTrue(list.contains("ну"))
         XCTAssertFalse(list.contains("типа"), "ambiguous: «объект типа Promise»")
     }
+
+    // MARK: - Implausible length (engine invented text on silence)
+
+    func test_implausiblyLong_flagsParagraphFromSubSecondClip() {
+        let invented = "Так, в общем, задача звучит следующим образом. Есть задача разработать телеграм-бота для категоризации входящих сообщений."
+        XCTAssertTrue(TextCleaner.isImplausiblyLong(invented, durationMs: 780))
+        XCTAssertTrue(TextCleaner.isImplausiblyLong("Мы создали Pull request, и сейчас надо сделать code review", durationMs: 1290))
+    }
+
+    func test_implausiblyLong_keepsFastRealSpeech() {
+        // Fastest real dictations in history run ~18 chars/s.
+        XCTAssertFalse(TextCleaner.isImplausiblyLong("Проверь, чтобы переиспользовалось.", durationMs: 1890))
+        XCTAssertFalse(TextCleaner.isImplausiblyLong("Да.", durationMs: 300))
+        XCTAssertFalse(TextCleaner.isImplausiblyLong(String(repeating: "а", count: 180), durationMs: 9000))
+    }
 }

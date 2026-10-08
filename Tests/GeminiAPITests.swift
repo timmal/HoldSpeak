@@ -37,7 +37,7 @@ final class GeminiAPITests: XCTestCase {
     func test_prompt_autoLanguageAndNoTerms() {
         let prompt = GeminiAPI.prompt(language: nil, terms: [])
         XCTAssertFalse(prompt.contains("mostly in"))
-        XCTAssertFalse(prompt.contains("Vocabulary"))
+        XCTAssertFalse(prompt.contains("Spelling reference"))
     }
 
     func test_prompt_fillerRemoval() {

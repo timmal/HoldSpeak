@@ -159,14 +159,16 @@ public enum GeminiAPI {
                     + "(э, эм, ну, типа, короче, как бы, вот, um, uh, like, you know) where they carry no meaning, "
                     + "but keep them where they do (\"объект типа Promise\", \"I like it\"). Otherwise keep the wording as spoken."
                 : "Transcribe this speech verbatim, with natural punctuation.",
-            "Output only the transcript — no comments, no quotes. If there is no speech, output nothing.",
+            "Output only the transcript — no comments, no quotes.",
+            "If the audio has no clear speech (silence, background noise, clicks), output nothing. Never guess or invent words.",
             "Keep technical terms, product names and English words in their original Latin spelling.",
         ]
         if let language, let name = Locale(identifier: "en").localizedString(forLanguageCode: language) {
             lines.append("The speech is mostly in \(name).")
         }
         if !terms.isEmpty {
-            lines.append("Vocabulary that may appear: " + terms.joined(separator: ", ") + ".")
+            lines.append("Spelling reference — use only for words actually spoken, never output on its own: "
+                + terms.joined(separator: ", ") + ".")
         }
         return lines.joined(separator: "\n")
     }
