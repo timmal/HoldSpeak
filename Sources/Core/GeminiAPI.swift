@@ -1,6 +1,6 @@
 import Foundation
 
-public enum GeminiModelID: String, CaseIterable, Identifiable {
+public enum GeminiModelID: String, CaseIterable, Identifiable, CloudModel {
     case transcribe = "gemini-3.5-transcribe"
     case flashLite = "gemini-3.5-flash-lite"
     public var id: String { rawValue }
@@ -27,7 +27,6 @@ public enum GeminiModelID: String, CaseIterable, Identifiable {
         case .flashLite:  return "$0.06"
         }
     }
-    /// Tried with the same audio when this model fails on Google's side.
     public var fallback: GeminiModelID {
         switch self {
         case .transcribe: return .flashLite
@@ -36,119 +35,9 @@ public enum GeminiModelID: String, CaseIterable, Identifiable {
     }
 }
 
-/// Which model to ask first. A model that just failed on Google's side is skipped
-/// for `cooldown` seconds, so every dictation doesn't pay for the failed round trip.
-public struct GeminiFallbackPolicy {
-    public let cooldown: TimeInterval
-    private var failedAt: [GeminiModelID: Date] = [:]
-
-    public init(cooldown: TimeInterval = 30 * 60) {
-        self.cooldown = cooldown
-    }
-
-    public func order(preferred: GeminiModelID, now: Date = Date()) -> [GeminiModelID] {
-        if let failed = failedAt[preferred], now.timeIntervalSince(failed) < cooldown {
-            return [preferred.fallback, preferred]
-        }
-        return [preferred, preferred.fallback]
-    }
-
-    public mutating func markFailed(_ model: GeminiModelID, now: Date = Date()) {
-        failedAt[model] = now
-    }
-
-    public mutating func markSucceeded(_ model: GeminiModelID) {
-        failedAt[model] = nil
-    }
-}
-
-/// Shown in the HUD pill when the dictation went through the other model.
-public struct ModelFallbackNotice: Equatable {
-    public let failed: GeminiModelID
-    public let used: GeminiModelID
-
-    public init(failed: GeminiModelID, used: GeminiModelID) {
-        self.failed = failed
-        self.used = used
-    }
-
-    public var title: String { "\(failed.shortLabel) unavailable" }
-    public var body: String { "Used \(used.shortLabel) instead" }
-}
-
-/// Why a dictation produced no text, worded for a user notification.
-public enum TranscriptionFailure: Error, Equatable {
-    case whisperModelNotReady
-    case missingAPIKey
-    case invalidAPIKey
-    case quotaExceeded(daily: Bool, retryAfterSeconds: Int?)
-    case unreachable
-    case serviceError(status: Int)
-
-    /// Both lines are shown in the HUD pill, so keep them short.
-    public var title: String {
-        switch self {
-        case .whisperModelNotReady:  return "Whisper model not ready"
-        case .missingAPIKey:         return "No Gemini API key"
-        case .invalidAPIKey:         return "Gemini rejected the API key"
-        case .quotaExceeded(let daily, _):
-            return daily ? "Gemini daily limit reached" : "Gemini rate limit reached"
-        case .unreachable:           return "Gemini unreachable"
-        case .serviceError(let status): return "Gemini error (HTTP \(status))"
-        }
-    }
-
-    public var body: String {
-        switch self {
-        case .whisperModelNotReady: return "Still loading, or download it in Preferences"
-        case .missingAPIKey:        return "Add it in Preferences → Audio"
-        case .invalidAPIKey:        return "Check it in Preferences → Audio"
-        // A key without billing runs on the free tier: a couple dozen requests a day.
-        case .quotaExceeded(let daily, let retry):
-            if daily { return "Set up billing for the key in Google AI Studio" }
-            if let retry { return "Retry in \(retry) s, or set up billing in AI Studio" }
-            return "Set up billing for the key in Google AI Studio"
-        case .unreachable:          return "Check your internet connection"
-        case .serviceError:         return "Try again in a moment"
-        }
-    }
-
-    /// The model itself is broken or down (bad request, not found, 5xx after a retry),
-    /// so the other model may still work. Key, quota and network errors would hit it too.
-    public var warrantsModelFallback: Bool {
-        if case .serviceError = self { return true }
-        return false
-    }
-
-    /// How long the HUD keeps the message up.
-    public var displaySeconds: Double {
-        if case .quotaExceeded = self { return 6 }
-        return 4
-    }
-}
-
 /// Pure request/response helpers for the Gemini API — no networking, so `swift test` covers them.
 public enum GeminiAPI {
     public static let baseURL = URL(string: "https://generativelanguage.googleapis.com/v1beta/")!
-    public static let sampleRate = 16_000
-
-    /// 16 kHz mono 16-bit PCM WAV.
-    public static func wav(_ samples: [Float]) -> Data {
-        let dataSize = samples.count * 2
-        var d = Data(capacity: 44 + dataSize)
-        func u32(_ v: Int) { withUnsafeBytes(of: UInt32(v).littleEndian) { d.append(contentsOf: $0) } }
-        func u16(_ v: Int) { withUnsafeBytes(of: UInt16(v).littleEndian) { d.append(contentsOf: $0) } }
-        d.append(contentsOf: Array("RIFF".utf8)); u32(36 + dataSize)
-        d.append(contentsOf: Array("WAVE".utf8))
-        d.append(contentsOf: Array("fmt ".utf8)); u32(16); u16(1); u16(1)
-        u32(sampleRate); u32(sampleRate * 2); u16(2); u16(16)
-        d.append(contentsOf: Array("data".utf8)); u32(dataSize)
-        for s in samples {
-            let v = Int16(max(-1, min(1, s)) * Float(Int16.max))
-            withUnsafeBytes(of: v.littleEndian) { d.append(contentsOf: $0) }
-        }
-        return d
-    }
 
     /// `language` is a two-letter code, nil for auto-detect. `terms` are canonical
     /// spellings from the terminology dictionary.
@@ -215,14 +104,14 @@ public enum GeminiAPI {
         let details = error?["details"] as? [[String: Any]] ?? []
         switch status {
         case 401, 403:
-            return .invalidAPIKey
+            return .invalidAPIKey(.gemini)
         case 400:
             let reasons = details.compactMap { $0["reason"] as? String }
             let message = error?["message"] as? String ?? ""
             if reasons.contains("API_KEY_INVALID") || message.contains("API key not valid") {
-                return .invalidAPIKey
+                return .invalidAPIKey(.gemini)
             }
-            return .serviceError(status: status)
+            return .serviceError(.gemini, status: status)
         case 429:
             let quotaIDs = details
                 .flatMap { $0["violations"] as? [[String: Any]] ?? [] }
@@ -233,15 +122,11 @@ public enum GeminiAPI {
                 .first
                 .flatMap { Double($0.trimmingCharacters(in: CharacterSet(charactersIn: "s"))) }
                 .map { Int($0.rounded(.up)) }
-            return .quotaExceeded(daily: daily, retryAfterSeconds: retry)
+            return .quotaExceeded(.gemini, daily: daily, retryAfterSeconds: retry)
         default:
-            return .serviceError(status: status)
+            return .serviceError(.gemini, status: status)
         }
     }
-}
-
-public enum GeminiKeyCheck: Equatable {
-    case valid, invalid, unreachable
 }
 
 public struct GeminiClient {
@@ -267,7 +152,7 @@ public struct GeminiClient {
                 (data, response) = try await session.data(for: request)
             } catch {
                 pttLog("gemini request failed: \(error)")
-                throw TranscriptionFailure.unreachable
+                throw TranscriptionFailure.unreachable(.gemini)
             }
             let status = (response as? HTTPURLResponse)?.statusCode ?? 0
             if status == 200 { return GeminiAPI.extractText(data) }
@@ -276,11 +161,11 @@ public struct GeminiClient {
                 throw GeminiAPI.failure(status: status, body: data)
             }
         }
-        throw TranscriptionFailure.unreachable
+        throw TranscriptionFailure.unreachable(.gemini)
     }
 
     /// Cheapest authenticated call: list one model.
-    public func check(apiKey: String) async -> GeminiKeyCheck {
+    public func check(apiKey: String) async -> APIKeyCheck {
         var components = URLComponents(url: GeminiAPI.baseURL.appendingPathComponent("models"), resolvingAgainstBaseURL: false)!
         components.queryItems = [URLQueryItem(name: "pageSize", value: "1")]
         var request = URLRequest(url: components.url!)

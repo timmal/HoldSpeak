@@ -84,7 +84,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         appliedModelID = prefs.modelID
         appliedEngine = prefs.engineChosen ? prefs.engine : nil
-        // A fresh install loads nothing until onboarding picks an engine; Gemini
+        // A fresh install loads nothing until onboarding picks an engine; the cloud engines
         // never needs the ~800 MB Whisper model in memory.
         if prefs.engineChosen, prefs.engine == .whisper {
             loadModel(prefs.modelID)
@@ -186,7 +186,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if engineChanged {
             appliedEngine = prefs.engine
             pttLog("Engine switched to \(prefs.engine.rawValue)")
-            if prefs.engine == .gemini { engine.unloadWhisper() }
+            if prefs.engine != .whisper { engine.unloadWhisper() }
         }
         guard prefs.engine == .whisper else { return }
         if engineChanged || prefs.modelID != appliedModelID {

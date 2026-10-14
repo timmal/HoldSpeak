@@ -9,7 +9,7 @@ final class GeminiAPITests: XCTestCase {
     // MARK: WAV
 
     func test_wav_hasPCMHeaderAndSize() {
-        let data = GeminiAPI.wav([0, 0.5, -0.5, 1])
+        let data = CloudAudio.wav([0, 0.5, -0.5, 1])
         XCTAssertEqual(data.count, 44 + 4 * 2)
         XCTAssertEqual(String(decoding: data[0..<4], as: UTF8.self), "RIFF")
         XCTAssertEqual(String(decoding: data[8..<12], as: UTF8.self), "WAVE")
@@ -19,7 +19,7 @@ final class GeminiAPITests: XCTestCase {
     }
 
     func test_wav_clampsSamples() {
-        let data = GeminiAPI.wav([2, -2])
+        let data = CloudAudio.wav([2, -2])
         let first = Int16(bitPattern: UInt16(data[44]) | UInt16(data[45]) << 8)
         let second = Int16(bitPattern: UInt16(data[46]) | UInt16(data[47]) << 8)
         XCTAssertEqual(first, Int16.max)
@@ -88,13 +88,13 @@ final class GeminiAPITests: XCTestCase {
     func test_failure_invalidKey() {
         let body = json(["error": ["code": 400, "message": "API key not valid. Please pass a valid API key.",
                                    "details": [["reason": "API_KEY_INVALID"]]]])
-        XCTAssertEqual(GeminiAPI.failure(status: 400, body: body), .invalidAPIKey)
-        XCTAssertEqual(GeminiAPI.failure(status: 403, body: Data()), .invalidAPIKey)
+        XCTAssertEqual(GeminiAPI.failure(status: 400, body: body), .invalidAPIKey(.gemini))
+        XCTAssertEqual(GeminiAPI.failure(status: 403, body: Data()), .invalidAPIKey(.gemini))
     }
 
     func test_failure_plain400IsServiceError() {
         let body = json(["error": ["code": 400, "message": "Invalid JSON payload"]])
-        XCTAssertEqual(GeminiAPI.failure(status: 400, body: body), .serviceError(status: 400))
+        XCTAssertEqual(GeminiAPI.failure(status: 400, body: body), .serviceError(.gemini, status: 400))
     }
 
     func test_failure_dailyQuota() {
@@ -104,7 +104,7 @@ final class GeminiAPITests: XCTestCase {
             ["@type": "type.googleapis.com/google.rpc.RetryInfo", "retryDelay": "41.5s"],
         ]]])
         let failure = GeminiAPI.failure(status: 429, body: body)
-        XCTAssertEqual(failure, .quotaExceeded(daily: true, retryAfterSeconds: 42))
+        XCTAssertEqual(failure, .quotaExceeded(.gemini, daily: true, retryAfterSeconds: 42))
         XCTAssertTrue(failure.body.contains("billing"))
     }
 
@@ -113,7 +113,7 @@ final class GeminiAPITests: XCTestCase {
             ["violations": [["quotaId": "GenerateRequestsPerMinutePerProjectPerModel-FreeTier"]]],
             ["retryDelay": "12s"],
         ]]])
-        XCTAssertEqual(GeminiAPI.failure(status: 429, body: body), .quotaExceeded(daily: false, retryAfterSeconds: 12))
+        XCTAssertEqual(GeminiAPI.failure(status: 429, body: body), .quotaExceeded(.gemini, daily: false, retryAfterSeconds: 12))
     }
 
     func test_retryOnlyServerErrors() {
@@ -131,17 +131,17 @@ final class GeminiAPITests: XCTestCase {
     }
 
     func test_fallbackOnlyForModelSideErrors() {
-        XCTAssertTrue(TranscriptionFailure.serviceError(status: 400).warrantsModelFallback)
-        XCTAssertTrue(TranscriptionFailure.serviceError(status: 404).warrantsModelFallback)
-        XCTAssertTrue(TranscriptionFailure.serviceError(status: 503).warrantsModelFallback)
-        XCTAssertFalse(TranscriptionFailure.invalidAPIKey.warrantsModelFallback)
-        XCTAssertFalse(TranscriptionFailure.missingAPIKey.warrantsModelFallback)
-        XCTAssertFalse(TranscriptionFailure.quotaExceeded(daily: true, retryAfterSeconds: nil).warrantsModelFallback)
-        XCTAssertFalse(TranscriptionFailure.unreachable.warrantsModelFallback)
+        XCTAssertTrue(TranscriptionFailure.serviceError(.gemini, status: 400).warrantsModelFallback)
+        XCTAssertTrue(TranscriptionFailure.serviceError(.gemini, status: 404).warrantsModelFallback)
+        XCTAssertTrue(TranscriptionFailure.serviceError(.gemini, status: 503).warrantsModelFallback)
+        XCTAssertFalse(TranscriptionFailure.invalidAPIKey(.gemini).warrantsModelFallback)
+        XCTAssertFalse(TranscriptionFailure.missingAPIKey(.gemini).warrantsModelFallback)
+        XCTAssertFalse(TranscriptionFailure.quotaExceeded(.gemini, daily: true, retryAfterSeconds: nil).warrantsModelFallback)
+        XCTAssertFalse(TranscriptionFailure.unreachable(.gemini).warrantsModelFallback)
     }
 
     func test_fallbackPolicy_preferredFirstUntilItFails() {
-        var policy = GeminiFallbackPolicy(cooldown: 1800)
+        var policy = ModelFallbackPolicy<GeminiModelID>(cooldown: 1800)
         let now = Date(timeIntervalSince1970: 1_000_000)
         XCTAssertEqual(policy.order(preferred: .transcribe, now: now), [.transcribe, .flashLite])
 
@@ -154,7 +154,7 @@ final class GeminiAPITests: XCTestCase {
     }
 
     func test_fallbackPolicy_successClearsFailure() {
-        var policy = GeminiFallbackPolicy(cooldown: 1800)
+        var policy = ModelFallbackPolicy<GeminiModelID>(cooldown: 1800)
         let now = Date(timeIntervalSince1970: 1_000_000)
         policy.markFailed(.transcribe, now: now)
         policy.markSucceeded(.transcribe)
@@ -167,7 +167,7 @@ final class GeminiAPITests: XCTestCase {
     }
 
     func test_fallbackNotice_namesBothModels() {
-        let notice = ModelFallbackNotice(failed: .transcribe, used: .flashLite)
+        let notice = ModelFallbackNotice(failed: GeminiModelID.transcribe, used: .flashLite)
         XCTAssertEqual(notice.title, "3.5 Transcribe unavailable")
         XCTAssertEqual(notice.body, "Used 3.5 Flash-Lite instead")
     }

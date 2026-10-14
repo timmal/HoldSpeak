@@ -15,7 +15,7 @@ final class TranscriptionCoordinator {
     }
 
     private let engine: TranscriptionEngine
-    /// Gemini answered through the other model; called before the text is inserted.
+    /// A cloud engine answered through its other model; called before the text is inserted.
     var onModelFallback: ((ModelFallbackNotice) -> Void)?
     private let store: HistoryStore
     /// Tail of the FIFO: each finish waits for the previous one so two transcriptions
@@ -68,7 +68,8 @@ final class TranscriptionCoordinator {
             autoPunctuation: prefs.autoPunctuation,
             autoCapitalize: prefs.autoCapitalize,
             dropHallucinations: prefs.engine == .whisper,
-            fillers: prefs.removeFillers && prefs.engine == .whisper
+            // Gemini is asked to drop fillers by context; the others get the list.
+            fillers: prefs.removeFillers && prefs.engine != .gemini
                 ? TextCleaner.parseFillers(prefs.fillerWords) : []
         )
         pttLog("cleaned: \(logText(cleaned))")

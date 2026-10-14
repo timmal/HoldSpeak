@@ -83,18 +83,29 @@ public enum WhisperModelID: String, CaseIterable, Identifiable {
 }
 
 public enum TranscriptionEngineKind: String {
-    case whisper, gemini
+    case whisper, gemini, openai
+
+    /// nil for the local Whisper engine.
+    public var cloudProvider: CloudProvider? {
+        switch self {
+        case .whisper: return nil
+        case .gemini:  return .gemini
+        case .openai:  return .openai
+        }
+    }
 }
 
-/// One entry of the combined "Model" dropdown: a local Whisper model or a Gemini model.
+/// One entry of the combined "Model" dropdown: a local Whisper model or a cloud model.
 public enum ModelChoice: Hashable, Identifiable {
     case whisper(WhisperModelID)
     case gemini(GeminiModelID)
+    case openai(OpenAIModelID)
 
     public var id: String {
         switch self {
         case .whisper(let m): return m.rawValue
         case .gemini(let m):  return m.rawValue
+        case .openai(let m):  return m.rawValue
         }
     }
     /// Shown in the closed dropdown; the open menu lists the full model labels.
@@ -102,6 +113,7 @@ public enum ModelChoice: Hashable, Identifiable {
         switch self {
         case .whisper(let m): return "Whisper \(m.shortLabel)"
         case .gemini(let m):  return "Gemini \(m.shortLabel)"
+        case .openai(let m):  return "OpenAI \(m.shortLabel)"
         }
     }
 }
@@ -112,6 +124,7 @@ public final class PreferencesStore: ObservableObject {
     @AppStorage("hudPosition")     public var hudPosition: HUDPosition = .bottomCenter
     @AppStorage("modelID")         public var modelID: WhisperModelID = .turbo
     @AppStorage("geminiModel")     public var geminiModel: GeminiModelID = .transcribe
+    @AppStorage("openAIModel")     public var openAIModel: OpenAIModelID = .transcribe
     /// Empty until the user picks an engine in onboarding.
     @AppStorage("transcriptionEngine") private var engineRaw: String = ""
     @AppStorage("primaryLanguage") public var primaryLanguage: PrimaryLanguage = .ru
@@ -120,7 +133,7 @@ public final class PreferencesStore: ObservableObject {
     @AppStorage("autoPunctuation") public var autoPunctuation: Bool = true
     @AppStorage("autoCapitalize")  public var autoCapitalize: Bool = true
     @AppStorage("removeFillers")   public var removeFillers: Bool = false
-    /// Whisper only; Gemini drops fillers by context instead of a list.
+    /// Whisper and OpenAI; Gemini drops fillers by context instead of a list.
     @AppStorage("fillerWords")     public var fillerWords: String = TextCleaner.defaultFillers
     @AppStorage("metricsResetAtMs") public var metricsResetAtMs: Int = 0
     @AppStorage("inputDevice")     private var inputDeviceRaw: String = InputSelection.avoidBluetooth.rawValue
@@ -138,39 +151,48 @@ public final class PreferencesStore: ObservableObject {
     public var engineChosen: Bool { !engineRaw.isEmpty }
 
     public var modelChoice: ModelChoice {
-        get { engine == .gemini ? .gemini(geminiModel) : .whisper(modelID) }
+        get {
+            switch engine {
+            case .whisper: return .whisper(modelID)
+            case .gemini:  return .gemini(geminiModel)
+            case .openai:  return .openai(openAIModel)
+            }
+        }
         set {
             switch newValue {
             case .whisper(let m): modelID = m; engine = .whisper
             case .gemini(let m):  geminiModel = m; engine = .gemini
+            case .openai(let m):  openAIModel = m; engine = .openai
             }
         }
     }
 
-    private static let geminiKeyAccount = "gemini-api-key"
+    private static func keyAccount(_ provider: CloudProvider) -> String {
+        "\(provider.rawValue)-api-key"
+    }
     /// Read once from the Keychain, then served from memory: finalize asks on every dictation.
-    private var cachedGeminiKey: String??
+    private var cachedKeys: [CloudProvider: String?] = [:]
 
-    public var geminiAPIKey: String? {
-        get {
-            if let cached = cachedGeminiKey { return cached }
-            let key = Keychain.string(for: Self.geminiKeyAccount)
-            cachedGeminiKey = .some(key)
-            return key
-        }
-        set {
-            objectWillChange.send()
-            if let newValue, !newValue.isEmpty {
-                Keychain.set(newValue, for: Self.geminiKeyAccount)
-                cachedGeminiKey = .some(newValue)
-            } else {
-                Keychain.delete(Self.geminiKeyAccount)
-                cachedGeminiKey = .some(nil)
-            }
+    public func apiKey(_ provider: CloudProvider) -> String? {
+        if let cached = cachedKeys[provider] { return cached }
+        let key = Keychain.string(for: Self.keyAccount(provider))
+        cachedKeys[provider] = .some(key)
+        return key
+    }
+
+    /// nil or empty removes the key.
+    public func setAPIKey(_ key: String?, for provider: CloudProvider) {
+        objectWillChange.send()
+        if let key, !key.isEmpty {
+            Keychain.set(key, for: Self.keyAccount(provider))
+            cachedKeys[provider] = .some(key)
+        } else {
+            Keychain.delete(Self.keyAccount(provider))
+            cachedKeys[provider] = .some(nil)
         }
     }
 
-    public var hasGeminiKey: Bool { geminiAPIKey?.isEmpty == false }
+    public func hasAPIKey(_ provider: CloudProvider) -> Bool { apiKey(provider)?.isEmpty == false }
 
     public func applyAppearance() {
         NSApp.appearance = appTheme.nsAppearance

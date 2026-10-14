@@ -6,7 +6,7 @@
 
 **Website: [holdspeak.app](https://holdspeak.app/)** · [Download](https://github.com/timmal/HoldSpeak/releases/latest) · [Free Superwhisper alternative — comparison](https://holdspeak.app/superwhisper-alternative.html)
 
-Local push-to-talk dictation for macOS. HoldSpeak is a **menu bar app** (no Dock icon, no windows in the way) — it lives in the status bar and stays out of your workflow until you hold the hotkey. Speak, release — recognized text is inserted into the focused input. Local by default: Whisper runs on GPU via WhisperKit. Optionally, you can switch to Google Gemini with your own API key.
+Local push-to-talk dictation for macOS. HoldSpeak is a **menu bar app** (no Dock icon, no windows in the way) — it lives in the status bar and stays out of your workflow until you hold the hotkey. Speak, release — recognized text is inserted into the focused input. Local by default: Whisper runs on GPU via WhisperKit. Optionally, you can switch to Google Gemini or OpenAI with your own API key.
 
 <p align="center">
   <img src="docs/screenshots/popover.webp?v=4" width="360" alt="Menu bar popover" />
@@ -17,13 +17,13 @@ A free, local alternative to paid Whisper wrappers. Built for one reason: talkin
 ## Features
 
 - **Local transcription** through WhisperKit (CoreML, GPU)
-- **Optional cloud engine** — Google Gemini with your own API key, for higher accuracy on mixed-language speech and jargon
+- **Optional cloud engines** — Google Gemini or OpenAI with your own API key, for higher accuracy on mixed-language speech and jargon
 - **Code-switching RU/EN/UK and more** — in auto mode the language is chosen only from the ones you have in System Settings → Language & Region
 - **Insertion without clipboard** — via `CGEventKeyboardSetUnicodeString`; password fields are skipped
 - **Menu bar popover** with recent transcriptions (click to copy) and metrics: dictations today / yesterday, 7-day avg WPM
 - **HUD overlay** while you hold the key: dark pill with a live mic level; if a dictation fails (no model, bad API key, quota), the reason shows in the same pill
 - **Light text cleanup** — trims long "eeeeee / mmmmm / ummm", collapses 3+ consecutive repeats, capitalizes the first letter and adds a period
-- **Optional filler-word removal** — off by default; drops "ну / короче / как бы / um / you know" from an editable list (Whisper) or by context (Gemini)
+- **Optional filler-word removal** — off by default; drops "ну / короче / как бы / um / you know" from an editable list (Whisper, OpenAI) or by context (Gemini)
 - **Liquid Glass** on macOS 26 and later — the HUD, popover, Preferences and onboarding use the system glass; macOS 13–15 keep the classic look
 - **Terminology dictionary** — canonical IT terms (pull request, Kubernetes, Claude Code, …) replace misrecognized Russian transliterations in transcripts; ships with ~110 defaults and is fully editable
 
@@ -33,7 +33,7 @@ Grab the latest DMG from the [Releases page](https://github.com/timmal/HoldSpeak
 
 Because the app is self-signed, macOS will block the first launch. Open **System Settings → Privacy & Security**, scroll to the message *"HoldSpeak was blocked…"* and click **Open Anyway**. Confirm with Touch ID / password. After that it launches normally from Launchpad / Applications. The app runs as a menu bar extra — look for the radio icon in the right side of your menu bar; it won't appear in the Dock or Cmd-Tab.
 
-On first launch, choose how speech is recognized — **Whisper** (on this Mac, downloads a model) or **Gemini** (Google cloud, asks for your API key) — then grant three permissions:
+On first launch, choose how speech is recognized — **Whisper** (on this Mac, downloads a model), **Gemini** (Google cloud) or **OpenAI** (cloud); the cloud engines ask for your API key — then grant three permissions:
 
 - **Microphone** — for audio capture
 - **Accessibility** — for the global hotkey and text insertion
@@ -88,7 +88,22 @@ If something goes wrong, the reason appears right in the HUD pill instead of a s
   <img src="docs/screenshots/hud-quota.webp?v=4" width="334" alt="HUD · Gemini daily limit reached" />
 </p>
 
-Privacy: with Gemini, each dictation's audio is sent to Google. Whisper stays the default and never sends anything anywhere. Text cleanup, the "Add period" / "Capitalize" / "Remove filler words" options and the terminology dictionary apply to both engines; Gemini also receives your dictionary's terms as spelling hints.
+### OpenAI (optional, cloud)
+
+Pick an OpenAI model in Preferences → Audio → **Model** (or choose OpenAI during onboarding) and paste an API key:
+
+1. Create a key at [OpenAI Platform → API keys](https://platform.openai.com/api-keys).
+2. **Add credits** in OpenAI Platform → Billing — the API is prepaid. When the balance or the monthly budget runs out, HoldSpeak shows *"OpenAI credits used up"* in the HUD.
+3. Paste the key in HoldSpeak and click **Save**. Like the Gemini key, it is checked with OpenAI and stored in the macOS Keychain.
+
+Models:
+
+- **GPT Transcribe** (default) — OpenAI's current speech-to-text model, about **$0.27 per hour of speech**. Your dictionary's terms go in as keywords, the primary language as a language hint, and in Auto mode the language it detects switches the dictionary.
+- **GPT-4o mini Transcribe** — cheaper, about $0.18 per hour; the terms go into the prompt.
+
+Both are dedicated transcription models rather than chat models, so they don't follow instructions: filler words are removed afterwards from the same editable list as with Whisper. The fallback to the other model on a server-side error works as with Gemini.
+
+Privacy: with Gemini or OpenAI, each dictation's audio is sent to Google or OpenAI respectively. Whisper stays the default and never sends anything anywhere. Text cleanup, the "Add period" / "Capitalize" / "Remove filler words" options and the terminology dictionary apply to every engine; the cloud engines also receive your dictionary's terms as spelling hints.
 
 ### Reducing insertion latency
 
@@ -116,7 +131,7 @@ By default, presses shorter than **150 ms** don't start recording — the key be
 ## Preferences
 
 - **General** — hotkey, hold threshold, HUD position (under the icon / bottom center), theme (Auto / Light / Dark), launch at login, update check
-- **Audio** — microphone, language, model (Whisper or Gemini), model download / deletion, Gemini API key, text cleanup options (period, capitalization, filler words)
+- **Audio** — microphone, language, model (Whisper, Gemini or OpenAI), model download / deletion, cloud API key, text cleanup options (period, capitalization, filler words)
 - **Terms** — terminology dictionary (see below)
 - **History** — clear history and reset metrics
 - **Support**
@@ -131,7 +146,7 @@ By default, presses shorter than **150 ms** don't start recording — the key be
 
 Preferences → Audio → **Remove filler words** (off by default) cleans up the "ну", "короче", "как бы", "um", "you know" you say while thinking:
 
-- **Whisper** — a text field appears with an editable, comma-separated list, prefilled with common Russian and English fillers. Only whole words are removed (any case), together with the comma after them, so *"Ну, короче, давай созвонимся"* becomes *"Давай созвонимся."* and *"нужно"* is left alone. Words that often carry meaning — *типа*, *вот*, *like* — aren't in the default list; add them if you want.
+- **Whisper, OpenAI** — a text field appears with an editable, comma-separated list, prefilled with common Russian and English fillers. Only whole words are removed (any case), together with the comma after them, so *"Ну, короче, давай созвонимся"* becomes *"Давай созвонимся."* and *"нужно"* is left alone. Words that often carry meaning — *типа*, *вот*, *like* — aren't in the default list; add them if you want.
 - **Gemini** — no list: the model is asked to drop fillers by context and keep the ones that mean something (*"объект типа Promise"*, *"I like it"*).
 
 ### Auto language detection
@@ -167,8 +182,8 @@ Whisper reliably recognizes common speech but routinely mangles IT terminology i
 
 ## Architecture
 
-- `Sources/Core` — pure logic (hotkey, recorder, inserter, text cleaner, storage, metrics, Gemini API client, Keychain)
-- `Sources/Whisper` — transcription engines: WhisperKit (local) and Gemini (cloud) behind one `TranscriptionEngine` facade, model manager
+- `Sources/Core` — pure logic (hotkey, recorder, inserter, text cleaner, storage, metrics, Gemini and OpenAI API clients, Keychain)
+- `Sources/Whisper` — transcription engines: WhisperKit (local), Gemini and OpenAI (cloud) behind one `TranscriptionEngine` facade, model manager
 - `Sources/UI` — SwiftUI: menu bar popover, preferences, onboarding, HUD
 - `Sources/App` — AppDelegate and entry point
 

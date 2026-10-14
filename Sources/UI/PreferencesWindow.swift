@@ -374,6 +374,9 @@ struct PreferencesView: View {
                         Section("Gemini — Google cloud, your API key") {
                             ForEach(GeminiModelID.allCases) { Text($0.label).tag(ModelChoice.gemini($0)) }
                         }
+                        Section("OpenAI — cloud, your API key") {
+                            ForEach(OpenAIModelID.allCases) { Text($0.label).tag(ModelChoice.openai($0)) }
+                        }
                     }
                     if prefs.engine == .whisper {
                         HStack(spacing: 6) {
@@ -402,9 +405,9 @@ struct PreferencesView: View {
                         .disabled(modelsVM.isLocated(prefs.modelID))
                     }
                 }
-            } else {
+            } else if let provider = prefs.engine.cloudProvider {
                 labeledRow("API key", alignment: .top) {
-                    GeminiKeyEditor()
+                    APIKeyEditor(provider: provider)
                 }
             }
 
@@ -455,7 +458,7 @@ struct PreferencesView: View {
                     .controlSize(.small)
 
                     if prefs.removeFillers {
-                        if prefs.engine == .whisper {
+                        if prefs.engine != .gemini {
                             TextField("ну, короче, um", text: $prefs.fillerWords, axis: .vertical)
                                 .textFieldStyle(.roundedBorder)
                                 .lineLimit(2...4)

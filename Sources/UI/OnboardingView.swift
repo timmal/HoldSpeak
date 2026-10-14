@@ -6,7 +6,7 @@ struct OnboardingView: View {
     @State private var perms = PermissionsManager.shared.current()
     @State private var step: Step
     @State private var choice: TranscriptionEngineKind = .whisper
-    /// Called when the user confirms an engine (a Gemini key is already saved by then).
+    /// Called when the user confirms an engine (a cloud engine's key is already saved by then).
     var onEngineChosen: (TranscriptionEngineKind) -> Void
     var onDone: () -> Void
 
@@ -30,7 +30,7 @@ struct OnboardingView: View {
             }
         }
         .padding(20)
-        .frame(width: 480, height: 440)
+        .frame(width: 480, height: 520)
     }
 
     // MARK: - Engine
@@ -45,8 +45,11 @@ struct OnboardingView: View {
             engineCard(.gemini,
                        title: "Gemini — Google cloud",
                        detail: "Usually more accurate with mixed languages and jargon. Needs your own Google AI Studio API key with billing.")
-            if choice == .gemini {
-                GeminiKeyEditor(width: 420)
+            engineCard(.openai,
+                       title: "OpenAI — cloud",
+                       detail: "Dedicated speech-to-text models, good with jargon. Needs your own OpenAI API key with credits.")
+            if let provider = choice.cloudProvider {
+                APIKeyEditor(provider: provider, width: 420)
                     .padding(.leading, 4)
             }
             Text("You can switch later in Preferences → Audio.")
@@ -60,7 +63,7 @@ struct OnboardingView: View {
                     perms = PermissionsManager.shared.current()
                     if perms.allGranted { onDone() } else { step = .permissions }
                 }
-                .disabled(choice == .gemini && !prefs.hasGeminiKey)
+                .disabled(choice.cloudProvider.map { !prefs.hasAPIKey($0) } ?? false)
                 .keyboardShortcut(.defaultAction)
                 .modifier(PrimaryOnGlass())
             }

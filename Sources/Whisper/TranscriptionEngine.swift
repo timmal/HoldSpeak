@@ -1,7 +1,7 @@
 import AVFoundation
 
 public enum TranscriptionResult {
-    /// `fallback` is set when Gemini answered through the other model.
+    /// `fallback` is set when a cloud engine answered through its other model.
     case text(String, language: String?, durationMs: Int, fallback: ModelFallbackNotice? = nil)
     /// Silence or nothing recognisable — nothing to tell the user.
     case empty
@@ -14,6 +14,7 @@ public enum TranscriptionResult {
 public final class TranscriptionEngine {
     private let whisper = WhisperTranscriber()
     private let gemini = GeminiTranscriber()
+    private let openai = OpenAITranscriber()
     private var accumulated: [Float] = []
     private let vad = SilenceTrimmer()
 
@@ -53,6 +54,7 @@ public final class TranscriptionEngine {
         switch PreferencesStore.shared.engine {
         case .whisper: return await whisper.transcribe(trimmed, durationMs: durationMs)
         case .gemini:  return await gemini.transcribe(trimmed, durationMs: durationMs)
+        case .openai:  return await openai.transcribe(trimmed, durationMs: durationMs)
         }
     }
 }
