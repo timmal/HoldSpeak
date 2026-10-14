@@ -20,6 +20,7 @@ final class ModelsViewModel: ObservableObject {
     }
 
     func download(_ id: WhisperModelID) async {
+        guard !downloading else { return }
         downloading = true
         progress = 0
         defer { downloading = false }
@@ -316,6 +317,44 @@ struct PreferencesView: View {
         }
     }
 
+    @ViewBuilder private func engineFallbackToggle(_ provider: CloudProvider) -> some View {
+        let backups = EngineFallback.cloudBackups(after: provider, hasKey: prefs.hasAPIKey)
+        let chain = (backups.map(\.name) + ["Whisper on this Mac"]).joined(separator: ", then to ")
+        VStack(alignment: .leading, spacing: 6) {
+            Toggle(isOn: $prefs.engineFallback) {
+                Text("Try other engines if this one fails")
+                    .font(.system(size: 13))
+                    .foregroundColor(PTT.textBody(scheme))
+            }
+            .toggleStyle(.checkbox)
+            .controlSize(.small)
+
+            if prefs.engineFallback {
+                Group {
+                    Text("If the selected engine can't transcribe (credits used up, a rejected key, no internet), the dictation goes to \(chain).")
+                    Text("Download the Whisper model in advance: the switch is faster, and without internet Whisper is the only option.")
+                }
+                .font(.system(size: 11))
+                .foregroundColor(PTT.textSoft(scheme))
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(width: 280, alignment: .leading)
+
+                if !modelsVM.isLocated(prefs.modelID) {
+                    if modelsVM.downloading {
+                        ProgressView(value: modelsVM.progress).frame(width: 240)
+                    } else {
+                        Button {
+                            Task { await modelsVM.download(prefs.modelID) }
+                        } label: {
+                            Text("Download Whisper \(prefs.modelID.shortLabel)")
+                        }
+                        .pttButton()
+                    }
+                }
+            }
+        }
+    }
+
     private func confirmDeleteModels() {
         let size = ByteCountFormatter.string(fromByteCount: modelsVM.managedBytes, countStyle: .file)
         let alert = NSAlert()
@@ -409,6 +448,9 @@ struct PreferencesView: View {
                 labeledRow("API key", alignment: .top) {
                     APIKeyEditor(provider: provider)
                 }
+                labeledRow("Fallback", alignment: .firstTextBaseline) {
+                    engineFallbackToggle(provider)
+                }
             }
 
             if modelsVM.managedBytes > 0, !modelsVM.downloading {
@@ -427,7 +469,7 @@ struct PreferencesView: View {
                 }
             }
 
-            labeledRow("") {
+            labeledRow("Text cleanup", alignment: .firstTextBaseline) {
                 Toggle(isOn: $prefs.autoPunctuation) {
                     Text("Add period at end of sentence")
                         .font(.system(size: 13))

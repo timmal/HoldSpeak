@@ -54,18 +54,30 @@ public struct ModelFallbackPolicy<Model: CloudModel> {
     }
 }
 
-/// Shown in the HUD pill when the dictation went through the other model.
+/// Cloud engines to try after `selected` fails, before local Whisper: the other
+/// providers whose key is saved.
+public enum EngineFallback {
+    public static func cloudBackups(after selected: CloudProvider,
+                                    hasKey: (CloudProvider) -> Bool) -> [CloudProvider] {
+        CloudProvider.allCases.filter { $0 != selected && hasKey($0) }
+    }
+}
+
+/// Shown in the HUD pill when the dictation went through another model or engine.
 public struct ModelFallbackNotice: Equatable {
-    public let failed: String
-    public let used: String
+    public let title: String
+    public let body: String
 
     public init<Model: CloudModel>(failed: Model, used: Model) {
-        self.failed = failed.shortLabel
-        self.used = used.shortLabel
+        title = "\(failed.shortLabel) unavailable"
+        body = "Used \(used.shortLabel) instead"
     }
 
-    public var title: String { "\(failed) unavailable" }
-    public var body: String { "Used \(used) instead" }
+    /// The selected engine failed and `usedEngine` (another engine's name) answered.
+    public init(failure: TranscriptionFailure, usedEngine: String) {
+        title = failure.title
+        body = "Used \(usedEngine) instead"
+    }
 }
 
 /// Why a dictation produced no text, worded for the HUD pill.
@@ -78,6 +90,9 @@ public enum TranscriptionFailure: Error, Equatable {
     case outOfCredits(CloudProvider)
     case unreachable(CloudProvider)
     case serviceError(CloudProvider, status: Int)
+    /// The cloud engine failed with the wrapped error and the backup Whisper model
+    /// is still downloading.
+    indirect case backupDownloading(TranscriptionFailure)
 
     /// Both lines are shown in the HUD pill, so keep them short.
     public var title: String {
@@ -90,6 +105,7 @@ public enum TranscriptionFailure: Error, Equatable {
         case .outOfCredits(let p):   return "\(p.name) credits used up"
         case .unreachable(let p):    return "\(p.name) unreachable"
         case .serviceError(let p, let status): return "\(p.name) error (HTTP \(status))"
+        case .backupDownloading(let failure):  return failure.title
         }
     }
 
@@ -109,6 +125,7 @@ public enum TranscriptionFailure: Error, Equatable {
         case .outOfCredits:         return "Add credits or raise the limit in OpenAI Billing"
         case .unreachable:          return "Check your internet connection"
         case .serviceError:         return "Try again in a moment"
+        case .backupDownloading:    return "Downloading Whisper as a backup…"
         }
     }
 
@@ -119,10 +136,16 @@ public enum TranscriptionFailure: Error, Equatable {
         return false
     }
 
+    /// No connection: other cloud engines would fail the same way, only Whisper can help.
+    public var isOffline: Bool {
+        if case .unreachable = self { return true }
+        return false
+    }
+
     /// How long the HUD keeps the message up.
     public var displaySeconds: Double {
         switch self {
-        case .quotaExceeded, .outOfCredits: return 6
+        case .quotaExceeded, .outOfCredits, .backupDownloading: return 6
         default: return 4
         }
     }

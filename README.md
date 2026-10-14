@@ -103,6 +103,12 @@ Models:
 
 Both are dedicated transcription models rather than chat models, so they don't follow instructions: filler words are removed afterwards from the same editable list as with Whisper. The fallback to the other model on a server-side error works as with Gemini.
 
+### Fallback to another engine (optional)
+
+With a cloud engine selected, Preferences → Audio → **Fallback: Try other engines if this one fails** (off by default) keeps dictation working when the selected engine can't transcribe — credits used up, quota, a rejected key, the service down, no internet. The same audio then goes to the other cloud engine, if its key is saved, and then to Whisper on this Mac; the HUD says why and who answered (*"OpenAI credits used up · Used Gemini instead"*). Without internet the other cloud engine is skipped and Whisper answers straight away.
+
+Whisper isn't kept in memory while a cloud engine is selected: the first fallback loads the model (a few extra seconds), then it stays loaded. If the model isn't downloaded yet, the first fallback starts the download and that dictation is lost; without internet it can't be downloaded at all, so download it in advance (the checkbox offers a button).
+
 Privacy: with Gemini or OpenAI, each dictation's audio is sent to Google or OpenAI respectively. Whisper stays the default and never sends anything anywhere. Text cleanup, the "Add period" / "Capitalize" / "Remove filler words" options and the terminology dictionary apply to every engine; the cloud engines also receive your dictionary's terms as spelling hints.
 
 ### Reducing insertion latency

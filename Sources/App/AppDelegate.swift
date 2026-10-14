@@ -49,6 +49,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                                anchor: self.menu.statusItemFrame, seconds: 4)
         }
         modelsVM = ModelsViewModel()
+        engine.onBackupDownloadNeeded = { [weak self] id in
+            guard let self, !self.modelsVM.downloading else { return }
+            Task { await self.modelsVM.download(id) }
+        }
         modelsVM.onDownloaded = { [weak self] id in
             let prefs = PreferencesStore.shared
             guard prefs.engine == .whisper, id == prefs.modelID else { return }

@@ -15,7 +15,7 @@ final class TranscriptionCoordinator {
     }
 
     private let engine: TranscriptionEngine
-    /// A cloud engine answered through its other model; called before the text is inserted.
+    /// Another model or engine answered; called before the text is inserted.
     var onModelFallback: ((ModelFallbackNotice) -> Void)?
     private let store: HistoryStore
     /// Tail of the FIFO: each finish waits for the previous one so two transcriptions
@@ -40,10 +40,10 @@ final class TranscriptionCoordinator {
 
     private func process(_ samples: [Float]) async -> Outcome {
         let startNs = DispatchTime.now().uptimeNanoseconds
-        let result: (text: String, language: String?, durationMs: Int)
+        let result: (text: String, language: String?, durationMs: Int, engine: TranscriptionEngineKind)
         switch await engine.finalize(samples: samples) {
-        case .text(let text, let language, let durationMs, let fallback):
-            result = (text, language, durationMs)
+        case .text(let text, let language, let durationMs, let engine, let fallback):
+            result = (text, language, durationMs, engine)
             if let fallback { onModelFallback?(fallback) }
         case .empty:
             return .empty
@@ -67,9 +67,10 @@ final class TranscriptionCoordinator {
             terminology: TerminologyStore.shared.entries(for: lang),
             autoPunctuation: prefs.autoPunctuation,
             autoCapitalize: prefs.autoCapitalize,
-            dropHallucinations: prefs.engine == .whisper,
+            // By the engine that answered, which may be a fallback rather than the selected one.
+            dropHallucinations: result.engine == .whisper,
             // Gemini is asked to drop fillers by context; the others get the list.
-            fillers: prefs.removeFillers && prefs.engine != .gemini
+            fillers: prefs.removeFillers && result.engine != .gemini
                 ? TextCleaner.parseFillers(prefs.fillerWords) : []
         )
         pttLog("cleaned: \(logText(cleaned))")

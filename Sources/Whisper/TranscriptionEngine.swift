@@ -1,8 +1,10 @@
 import AVFoundation
 
 public enum TranscriptionResult {
-    /// `fallback` is set when a cloud engine answered through its other model.
-    case text(String, language: String?, durationMs: Int, fallback: ModelFallbackNotice? = nil)
+    /// `engine` is the one that actually answered; `fallback` is set when that wasn't
+    /// the selected model or engine.
+    case text(String, language: String?, durationMs: Int, engine: TranscriptionEngineKind,
+              fallback: ModelFallbackNotice? = nil)
     /// Silence or nothing recognisable — nothing to tell the user.
     case empty
     case failed(TranscriptionFailure)
@@ -17,6 +19,9 @@ public final class TranscriptionEngine {
     private let openai = OpenAITranscriber()
     private var accumulated: [Float] = []
     private let vad = SilenceTrimmer()
+    /// The backup Whisper model isn't on disk: start downloading it (with progress in
+    /// Preferences). Called on main.
+    public var onBackupDownloadNeeded: ((WhisperModelID) -> Void)?
 
     public init() {}
 
@@ -51,10 +56,69 @@ public final class TranscriptionEngine {
         }
         let durationMs = Int(Double(trimmed.count) / 16.0)
         pttLog("finalize: VAD raw=\(rawMs)ms → trimmed=\(durationMs)ms \(vad.stats(samples))")
-        switch PreferencesStore.shared.engine {
-        case .whisper: return await whisper.transcribe(trimmed, durationMs: durationMs)
-        case .gemini:  return await gemini.transcribe(trimmed, durationMs: durationMs)
-        case .openai:  return await openai.transcribe(trimmed, durationMs: durationMs)
+        let prefs = PreferencesStore.shared
+        guard let selected = prefs.engine.cloudProvider else {
+            return await whisper.transcribe(trimmed, durationMs: durationMs)
+        }
+        let result = await transcribe(trimmed, durationMs: durationMs, with: selected)
+        guard case .failed(let failure) = result, prefs.engineFallback else { return result }
+        return await fallBack(trimmed, durationMs: durationMs, after: selected, failure: failure)
+    }
+
+    private func transcribe(_ trimmed: [Float], durationMs: Int, with provider: CloudProvider) async -> TranscriptionResult {
+        switch provider {
+        case .gemini: return await gemini.transcribe(trimmed, durationMs: durationMs)
+        case .openai: return await openai.transcribe(trimmed, durationMs: durationMs)
+        }
+    }
+
+    /// The selected cloud engine failed with `failure`: the other cloud engines with a
+    /// saved key, then local Whisper. The HUD shows `failure`, the reason for the switch.
+    private func fallBack(_ trimmed: [Float], durationMs: Int, after selected: CloudProvider,
+                          failure: TranscriptionFailure) async -> TranscriptionResult {
+        let prefs = PreferencesStore.shared
+        var offline = failure.isOffline
+        for provider in EngineFallback.cloudBackups(after: selected, hasKey: prefs.hasAPIKey) where !offline {
+            pttLog("fallback: \(selected.rawValue) failed (\(failure)), trying \(provider.rawValue)")
+            switch await transcribe(trimmed, durationMs: durationMs, with: provider) {
+            case .text(let text, let language, let ms, let engine, _):
+                return .text(text, language: language, durationMs: ms, engine: engine,
+                             fallback: ModelFallbackNotice(failure: failure, usedEngine: provider.name))
+            case .empty:
+                return .empty
+            case .failed(let next):
+                offline = next.isOffline
+            }
+        }
+
+        let model = prefs.modelID
+        guard ModelManager.shared.locateModel(model) != nil else {
+            // Without a connection there is nothing to download it with.
+            if offline {
+                pttLog("fallback: offline and Whisper \(model.rawValue) not downloaded")
+                return .failed(failure)
+            }
+            pttLog("fallback: Whisper \(model.rawValue) not downloaded, starting download")
+            onBackupDownloadNeeded?(model)
+            return .failed(.backupDownloading(failure))
+        }
+        pttLog("fallback: \(selected.rawValue) failed (\(failure)), trying Whisper \(model.rawValue)")
+        do {
+            // Loads the model on the first fallback; it then stays loaded until the
+            // user switches engines.
+            try await whisper.preload(model: model)
+        } catch {
+            pttLog("fallback: Whisper load failed: \(error)")
+            return .failed(failure)
+        }
+        switch await whisper.transcribe(trimmed, durationMs: durationMs) {
+        case .text(let text, let language, let ms, let engine, _):
+            return .text(text, language: language, durationMs: ms, engine: engine,
+                         fallback: ModelFallbackNotice(failure: failure, usedEngine: "Whisper"))
+        case .empty:
+            return .empty
+        case .failed:
+            return .failed(failure)
         }
     }
 }

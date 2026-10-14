@@ -34,7 +34,8 @@ final class CloudModelRunner<Model: CloudModel & RawRepresentable> where Model.R
                 fallbackPolicy.markSucceeded(model)
                 if text.isEmpty { return .empty }
                 let notice = failedModel.map { ModelFallbackNotice(failed: $0, used: model) }
-                return .text(text, language: reply.language ?? language, durationMs: durationMs, fallback: notice)
+                return .text(text, language: reply.language ?? language, durationMs: durationMs,
+                             engine: provider.engineKind, fallback: notice)
             } catch let failure as TranscriptionFailure {
                 pttLog("finalize \(tag) failed: model=\(model.rawValue) \(failure)")
                 lastFailure = failure

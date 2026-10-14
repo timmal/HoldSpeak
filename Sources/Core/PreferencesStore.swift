@@ -95,6 +95,15 @@ public enum TranscriptionEngineKind: String {
     }
 }
 
+extension CloudProvider {
+    public var engineKind: TranscriptionEngineKind {
+        switch self {
+        case .gemini: return .gemini
+        case .openai: return .openai
+        }
+    }
+}
+
 /// One entry of the combined "Model" dropdown: a local Whisper model or a cloud model.
 public enum ModelChoice: Hashable, Identifiable {
     case whisper(WhisperModelID)
@@ -133,6 +142,8 @@ public final class PreferencesStore: ObservableObject {
     @AppStorage("autoPunctuation") public var autoPunctuation: Bool = true
     @AppStorage("autoCapitalize")  public var autoCapitalize: Bool = true
     @AppStorage("removeFillers")   public var removeFillers: Bool = false
+    /// When the selected cloud engine fails: try the other cloud engines with a key, then Whisper.
+    @AppStorage("engineFallback")  public var engineFallback: Bool = false
     /// Whisper and OpenAI; Gemini drops fillers by context instead of a list.
     @AppStorage("fillerWords")     public var fillerWords: String = TextCleaner.defaultFillers
     @AppStorage("metricsResetAtMs") public var metricsResetAtMs: Int = 0
@@ -167,29 +178,62 @@ public final class PreferencesStore: ObservableObject {
         }
     }
 
-    private static func keyAccount(_ provider: CloudProvider) -> String {
+    /// All cloud keys live in one Keychain item: the app is self-signed, so macOS asks
+    /// for the password once per item after every update, and one item means one prompt.
+    private static let keysAccount = "api-keys"
+    /// One item per provider, before the keys were merged.
+    private static func legacyKeyAccount(_ provider: CloudProvider) -> String {
         "\(provider.rawValue)-api-key"
     }
     /// Read once from the Keychain, then served from memory: finalize asks on every dictation.
-    private var cachedKeys: [CloudProvider: String?] = [:]
+    private var cachedKeys: [String: String]?
+
+    private func storedKeys() -> [String: String] {
+        if let cachedKeys { return cachedKeys }
+        var keys: [String: String] = [:]
+        if let json = Keychain.string(for: Self.keysAccount),
+           let decoded = try? JSONDecoder().decode([String: String].self, from: Data(json.utf8)) {
+            keys = decoded
+        } else {
+            for provider in CloudProvider.allCases {
+                if let key = Keychain.string(for: Self.legacyKeyAccount(provider)), !key.isEmpty {
+                    keys[provider.rawValue] = key
+                }
+            }
+            if !keys.isEmpty, saveKeys(keys) {
+                CloudProvider.allCases.forEach { Keychain.delete(Self.legacyKeyAccount($0)) }
+                pttLog("Keychain: merged \(keys.count) API key(s) into one item")
+            }
+        }
+        cachedKeys = keys
+        return keys
+    }
+
+    @discardableResult
+    private func saveKeys(_ keys: [String: String]) -> Bool {
+        if keys.isEmpty {
+            Keychain.delete(Self.keysAccount)
+            return true
+        }
+        guard let data = try? JSONEncoder().encode(keys) else { return false }
+        return Keychain.set(String(decoding: data, as: UTF8.self), for: Self.keysAccount)
+    }
 
     public func apiKey(_ provider: CloudProvider) -> String? {
-        if let cached = cachedKeys[provider] { return cached }
-        let key = Keychain.string(for: Self.keyAccount(provider))
-        cachedKeys[provider] = .some(key)
-        return key
+        storedKeys()[provider.rawValue]
     }
 
     /// nil or empty removes the key.
     public func setAPIKey(_ key: String?, for provider: CloudProvider) {
         objectWillChange.send()
+        var keys = storedKeys()
         if let key, !key.isEmpty {
-            Keychain.set(key, for: Self.keyAccount(provider))
-            cachedKeys[provider] = .some(key)
+            keys[provider.rawValue] = key
         } else {
-            Keychain.delete(Self.keyAccount(provider))
-            cachedKeys[provider] = .some(nil)
+            keys[provider.rawValue] = nil
         }
+        saveKeys(keys)
+        cachedKeys = keys
     }
 
     public func hasAPIKey(_ provider: CloudProvider) -> Bool { apiKey(provider)?.isEmpty == false }

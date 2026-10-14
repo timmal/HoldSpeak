@@ -82,7 +82,7 @@ final class WhisperTranscriber {
             let lang = results.first?.language
             pttLog("finalize: text=\(logText(text)) lang=\(lang ?? "?") override=\(override ?? "nil") dur=\(durationMs)ms")
             if text.isEmpty { return .empty }
-            return .text(text, language: lang, durationMs: durationMs)
+            return .text(text, language: lang, durationMs: durationMs, engine: .whisper)
         } catch {
             pttLog("finalize error: \(error)")
             return .empty
