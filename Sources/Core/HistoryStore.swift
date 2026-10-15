@@ -29,7 +29,8 @@ public protocol HistoryStoring {
     func recent(limit: Int) throws -> [TranscriptionRecord]
     /// Metrics query: covers every utterance ever appended, not just the
     /// pruned history window shown to the user.
-    func sumsSince(_ unixMs: Int64) throws -> (words: Int, durationMs: Int)
+    /// Words and audio duration over `afterMs < createdAt <= toMs`.
+    func sums(afterMs: Int64, toMs: Int64) throws -> (words: Int, durationMs: Int)
     /// Dictations with `fromMs <= createdAt < toMs`, from the same unpruned table.
     func count(fromMs: Int64, toMs: Int64) throws -> Int
     /// Clears the visible history (transcript text) only. Metrics are kept;
@@ -130,10 +131,14 @@ public final class HistoryStore: HistoryStoring {
     }
 
     public func sumsSince(_ unixMs: Int64) throws -> (words: Int, durationMs: Int) {
+        try sums(afterMs: unixMs, toMs: Int64.max)
+    }
+
+    public func sums(afterMs: Int64, toMs: Int64) throws -> (words: Int, durationMs: Int) {
         try dbQueue.read { db in
             guard let row = try Row.fetchOne(db,
-                sql: "SELECT COALESCE(SUM(wordCount),0) AS w, COALESCE(SUM(durationMs),0) AS d FROM utterance_stats WHERE createdAt > ?",
-                arguments: [unixMs]) else { return (0, 0) }
+                sql: "SELECT COALESCE(SUM(wordCount),0) AS w, COALESCE(SUM(durationMs),0) AS d FROM utterance_stats WHERE createdAt > ? AND createdAt <= ?",
+                arguments: [afterMs, toMs]) else { return (0, 0) }
             let w: Int = row["w"] ?? 0
             let d: Int = row["d"] ?? 0
             return (w, d)

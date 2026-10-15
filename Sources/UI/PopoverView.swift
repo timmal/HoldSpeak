@@ -106,22 +106,41 @@ struct PopoverView: View {
 
     private var statsRow: some View {
         HStack(spacing: 10) {
-            statCard(value: "\(vm.metrics.dictationsToday.formatted())",
-                     label: "today · \(vm.metrics.dictationsYesterday.formatted()) yesterday")
-            statCard(value: "\(vm.metrics.wpm7d)", label: "wpm · 7d")
+            statCard(value: "\(vm.metrics.dictationsToday.formatted())", label: "today",
+                     detail: "(yest. \(vm.metrics.dictationsYesterday.formatted()))",
+                     changePercent: vm.metrics.dictationsTodayChangePercent,
+                     changeHint: "vs. the same time a week ago")
+            statCard(value: "\(vm.metrics.wpm7d)", label: "wpm · 7d",
+                     changePercent: vm.metrics.wpm7dChangePercent,
+                     changeHint: "vs. the same 7 days a week ago")
         }
         .padding(.horizontal, 18)
         .padding(.vertical, 16)
     }
 
-    private func statCard(value: String, label: String) -> some View {
+    private func statCard(value: String, label: String, detail: String? = nil,
+                          changePercent: Int? = nil, changeHint: String = "") -> some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text(value)
-                .font(.system(size: 22, weight: .bold))
-                .foregroundColor(PTT.textPrimary(scheme))
-            Text(label)
-                .font(.system(size: 10, weight: .regular))
-                .pttMuted(PTT.textMuted(scheme))
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                Text(value)
+                    .font(.system(size: 22, weight: .bold))
+                    .foregroundColor(PTT.textPrimary(scheme))
+                if let p = changePercent {
+                    Text(p > 0 ? "+\(p)%" : p < 0 ? "\u{2212}\(-p)%" : "0%")
+                        .font(.system(size: 11, weight: .semibold).monospacedDigit())
+                        .foregroundColor(p > 0 ? PTT.trendUp(scheme) : p < 0 ? PTT.trendDown(scheme) : PTT.textMuted(scheme))
+                        .help(changeHint)
+                }
+            }
+            HStack(spacing: 3) {
+                Text(label)
+                    .pttMuted(PTT.textMuted(scheme))
+                if let detail {
+                    Text(detail)
+                        .pttMuted(PTT.textCaption(scheme), level: .tertiary)
+                }
+            }
+            .font(.system(size: 10, weight: .regular))
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(12)

@@ -64,6 +64,12 @@ enum PTT {
     static func accentLink(_ s: ColorScheme) -> Color {
         s == .dark ? Color(red: 0.55, green: 0.75, blue: 1.0) : Color(red: 0.15, green: 0.38, blue: 0.95)
     }
+    static func trendUp(_ s: ColorScheme) -> Color {
+        s == .dark ? Color(red: 0.45, green: 0.85, blue: 0.60) : Color(red: 0.10, green: 0.55, blue: 0.30)
+    }
+    static func trendDown(_ s: ColorScheme) -> Color {
+        s == .dark ? Color(red: 1.0, green: 0.55, blue: 0.55) : Color(red: 0.80, green: 0.20, blue: 0.25)
+    }
     static let recordingRed = Color(red: 0.95, green: 0.24, blue: 0.32)
     static let statusGreen = Color(red: 0.22, green: 0.80, blue: 0.45)
 }

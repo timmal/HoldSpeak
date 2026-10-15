@@ -4,11 +4,20 @@ public struct Metrics: Equatable {
     /// Dictations since local midnight, and over the whole previous day.
     public let dictationsToday: Int
     public let dictationsYesterday: Int
+    /// `dictationsToday` vs the same weekday a week ago, from its midnight up to this
+    /// time of day, in percent. nil when that day had no dictations by then.
+    public let dictationsTodayChangePercent: Int?
     public let wpm7d: Int           // rounded to nearest int
-    public init(dictationsToday: Int, dictationsYesterday: Int, wpm7d: Int) {
+    /// `wpm7d` vs the same 7-day window as it stood exactly one week ago, in percent.
+    /// nil when either window has no dictations.
+    public let wpm7dChangePercent: Int?
+    public init(dictationsToday: Int, dictationsYesterday: Int, dictationsTodayChangePercent: Int? = nil,
+                wpm7d: Int, wpm7dChangePercent: Int? = nil) {
         self.dictationsToday = dictationsToday
         self.dictationsYesterday = dictationsYesterday
+        self.dictationsTodayChangePercent = dictationsTodayChangePercent
         self.wpm7d = wpm7d
+        self.wpm7dChangePercent = wpm7dChangePercent
     }
     public static let zero = Metrics(dictationsToday: 0, dictationsYesterday: 0, wpm7d: 0)
 }
@@ -29,23 +38,40 @@ public final class MetricsEngine: MetricsComputing {
 
     public func current(now: Date = Date()) throws -> Metrics {
         let anchor = resetAnchor()
-        let sevenDaysAgo = Int64((now.timeIntervalSince1970 - 7 * 86400) * 1000)
-        let wpmAnchor = max(anchor, sevenDaysAgo)
-        let sums = try store.sumsSince(wpmAnchor)
-        let wpm: Int
-        if sums.durationMs > 0 {
-            wpm = Int((Double(sums.words) * 60_000.0 / Double(sums.durationMs)).rounded())
-        } else {
-            wpm = 0
+        let week: Int64 = 7 * 86_400_000
+        let nowMs = Int64(now.timeIntervalSince1970 * 1000)
+        func wpm(afterMs: Int64, toMs: Int64) throws -> Double? {
+            let from = max(anchor, afterMs)
+            guard from < toMs else { return nil }
+            let sums = try store.sums(afterMs: from, toMs: toMs)
+            guard sums.durationMs > 0 else { return nil }
+            return Double(sums.words) * 60_000.0 / Double(sums.durationMs)
         }
+        let wpmNow = try wpm(afterMs: nowMs - week, toMs: Int64.max)
+        let wpmWeekAgo = try wpm(afterMs: nowMs - 2 * week, toMs: nowMs - week)
+        func percent(_ a: Double, vs b: Double) -> Int { Int(((a - b) / b * 100).rounded()) }
+        var wpmChange: Int?
+        if let a = wpmNow, let b = wpmWeekAgo, b > 0 { wpmChange = percent(a, vs: b) }
 
         let todayStart = calendar.startOfDay(for: now)
         let yesterdayStart = calendar.date(byAdding: .day, value: -1, to: todayStart) ?? todayStart
         func ms(_ d: Date) -> Int64 { Int64(d.timeIntervalSince1970 * 1000) }
-        // "Reset metrics" counts only what came after the anchor (exclusive, as in sumsSince).
+        // "Reset metrics" counts only what came after the anchor (exclusive, as in sums(afterMs:)).
         let floor = anchor + 1
         let today = try store.count(fromMs: max(floor, ms(todayStart)), toMs: Int64.max)
         let yesterday = try store.count(fromMs: max(floor, ms(yesterdayStart)), toMs: ms(todayStart))
-        return Metrics(dictationsToday: today, dictationsYesterday: yesterday, wpm7d: wpm)
+
+        // Same weekday last week, midnight up to this time of day. Skipped if a reset
+        // falls inside it: a partial day would skew the comparison.
+        var todayChange: Int?
+        if let weekAgoNow = calendar.date(byAdding: .day, value: -7, to: now) {
+            let weekAgoStart = calendar.startOfDay(for: weekAgoNow)
+            if anchor < ms(weekAgoStart) {
+                let weekAgo = try store.count(fromMs: ms(weekAgoStart), toMs: ms(weekAgoNow))
+                if weekAgo > 0 { todayChange = percent(Double(today), vs: Double(weekAgo)) }
+            }
+        }
+        return Metrics(dictationsToday: today, dictationsYesterday: yesterday, dictationsTodayChangePercent: todayChange,
+                       wpm7d: Int((wpmNow ?? 0).rounded()), wpm7dChangePercent: wpmChange)
     }
 }
