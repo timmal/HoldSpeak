@@ -9,7 +9,7 @@
 Local push-to-talk dictation for macOS. HoldSpeak is a **menu bar app** (no Dock icon, no windows in the way) — it lives in the status bar and stays out of your workflow until you hold the hotkey. Speak, release — recognized text is inserted into the focused input. Local by default: Whisper runs on GPU via WhisperKit. Optionally, you can switch to Google Gemini or OpenAI with your own API key.
 
 <p align="center">
-  <img src="docs/screenshots/popover.webp?v=4" width="360" alt="Menu bar popover" />
+  <img src="docs/screenshots/popover.webp?v=5" width="360" alt="Menu bar popover" />
 </p>
 
 A free, local alternative to paid Whisper wrappers. Built for one reason: talking to AI is faster than typing to it. Average typing speed hovers around 40–60 wpm; comfortable speech is 130–160 wpm — two to three times faster. As more of the dev loop moves into prompts to AI agents, raw typing throughput becomes a real ceiling on how quickly you can iterate. HoldSpeak lifts it: hold the hotkey, speak a full thought, release, it lands in the input.
@@ -20,7 +20,7 @@ A free, local alternative to paid Whisper wrappers. Built for one reason: talkin
 - **Optional cloud engines** — Google Gemini or OpenAI with your own API key, for higher accuracy on mixed-language speech and jargon
 - **Code-switching RU/EN/UK and more** — in auto mode the language is chosen only from the ones you have in System Settings → Language & Region
 - **Insertion without clipboard** — via `CGEventKeyboardSetUnicodeString`; password fields are skipped
-- **Menu bar popover** with recent transcriptions (click to copy) and metrics: dictations today / yesterday, 7-day avg WPM
+- **Menu bar popover** with recent transcriptions (click to copy) and metrics: dictations today / yesterday, 7-day avg WPM, each with its change vs. a week ago
 - **HUD overlay** while you hold the key: dark pill with a live mic level; if a dictation fails (no model, bad API key, quota), the reason shows in the same pill
 - **Light text cleanup** — trims long "eeeeee / mmmmm / ummm", collapses 3+ consecutive repeats, capitalizes the first letter and adds a period
 - **Optional filler-word removal** — off by default; drops "ну / короче / как бы / um / you know" from an editable list (Whisper, OpenAI) or by context (Gemini)
