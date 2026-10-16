@@ -108,25 +108,37 @@ final class MetricsEngineTests: XCTestCase {
         XCTAssertNil(try MetricsEngine(store: store, resetAnchor: { anchor }).current(now: now).wpm7dChangePercent)
     }
 
-    func test_todayChangeComparesWithSameTimeAWeekAgo() throws {
+    func test_todayChangeComparesWithYesterdayAtTheSameTime() throws {
         let store = try makeStore()
         let now = ISO8601DateFormatter().date(from: "2026-10-15T12:00:00Z")!
-        let weekAgo = now.addingTimeInterval(-7 * 86400)
-        for h in 1...3 { try add(store, at: now.addingTimeInterval(-Double(h) * 3600)) }     // 3 today
-        for h in 1...2 { try add(store, at: weekAgo.addingTimeInterval(-Double(h) * 3600)) } // 2 by noon a week ago
-        try add(store, at: weekAgo.addingTimeInterval(3600))                                // after noon: not counted
+        let yesterdayNow = now.addingTimeInterval(-86400)
+        for h in 1...3 { try add(store, at: now.addingTimeInterval(-Double(h) * 3600)) }          // 3 today
+        for h in 1...2 { try add(store, at: yesterdayNow.addingTimeInterval(-Double(h) * 3600)) } // 2 by noon yesterday
+        try add(store, at: yesterdayNow.addingTimeInterval(3600))                                // after noon: not counted
+        try add(store, at: yesterdayNow.addingTimeInterval(-13 * 3600))                         // day before: not counted
         let m = try MetricsEngine(store: store, calendar: utc).current(now: now)
         XCTAssertEqual(m.dictationsToday, 3)
+        XCTAssertEqual(m.dictationsYesterday, 3) // label keeps the full-day count
         XCTAssertEqual(m.dictationsTodayChangePercent, 50)
     }
 
-    func test_todayChangeIsNilWhenResetFallsInsideLastWeeksDay() throws {
+    func test_todayChangeIsNilWithoutDictationsYesterdayByThisTime() throws {
         let store = try makeStore()
         let now = ISO8601DateFormatter().date(from: "2026-10-15T12:00:00Z")!
-        let weekAgo = now.addingTimeInterval(-7 * 86400)
         try add(store, at: now.addingTimeInterval(-3600))
-        try add(store, at: weekAgo.addingTimeInterval(-3600))
-        let anchor = Int64(weekAgo.addingTimeInterval(-7200).timeIntervalSince1970 * 1000)
+        try add(store, at: now.addingTimeInterval(-86400 + 3600)) // yesterday, but after this time of day
+        let m = try MetricsEngine(store: store, calendar: utc).current(now: now)
+        XCTAssertEqual(m.dictationsYesterday, 1)
+        XCTAssertNil(m.dictationsTodayChangePercent)
+    }
+
+    func test_todayChangeIsNilWhenResetFallsInsideYesterday() throws {
+        let store = try makeStore()
+        let now = ISO8601DateFormatter().date(from: "2026-10-15T12:00:00Z")!
+        let yesterdayNow = now.addingTimeInterval(-86400)
+        try add(store, at: now.addingTimeInterval(-3600))
+        try add(store, at: yesterdayNow.addingTimeInterval(-3600))
+        let anchor = Int64(yesterdayNow.addingTimeInterval(-7200).timeIntervalSince1970 * 1000)
         let m = try MetricsEngine(store: store, resetAnchor: { anchor }, calendar: utc).current(now: now)
         XCTAssertNil(m.dictationsTodayChangePercent)
     }

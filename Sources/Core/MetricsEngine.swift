@@ -4,8 +4,9 @@ public struct Metrics: Equatable {
     /// Dictations since local midnight, and over the whole previous day.
     public let dictationsToday: Int
     public let dictationsYesterday: Int
-    /// `dictationsToday` vs the same weekday a week ago, from its midnight up to this
-    /// time of day, in percent. nil when that day had no dictations by then.
+    /// `dictationsToday` vs yesterday from its midnight up to this time of day, in percent.
+    /// nil when yesterday had no dictations by then. (`dictationsYesterday` stays the
+    /// full-day count.)
     public let dictationsTodayChangePercent: Int?
     public let wpm7d: Int           // rounded to nearest int
     /// `wpm7d` vs the same 7-day window as it stood exactly one week ago, in percent.
@@ -61,14 +62,14 @@ public final class MetricsEngine: MetricsComputing {
         let today = try store.count(fromMs: max(floor, ms(todayStart)), toMs: Int64.max)
         let yesterday = try store.count(fromMs: max(floor, ms(yesterdayStart)), toMs: ms(todayStart))
 
-        // Same weekday last week, midnight up to this time of day. Skipped if a reset
-        // falls inside it: a partial day would skew the comparison.
+        // Yesterday, midnight up to this time of day (calendar day back, so DST-safe).
+        // Skipped if a reset falls inside it: a partial day would skew the comparison.
         var todayChange: Int?
-        if let weekAgoNow = calendar.date(byAdding: .day, value: -7, to: now) {
-            let weekAgoStart = calendar.startOfDay(for: weekAgoNow)
-            if anchor < ms(weekAgoStart) {
-                let weekAgo = try store.count(fromMs: ms(weekAgoStart), toMs: ms(weekAgoNow))
-                if weekAgo > 0 { todayChange = percent(Double(today), vs: Double(weekAgo)) }
+        if let yesterdayNow = calendar.date(byAdding: .day, value: -1, to: now) {
+            let yesterdayNowStart = calendar.startOfDay(for: yesterdayNow)
+            if anchor < ms(yesterdayNowStart) {
+                let soFar = try store.count(fromMs: ms(yesterdayNowStart), toMs: ms(yesterdayNow))
+                if soFar > 0 { todayChange = percent(Double(today), vs: Double(soFar)) }
             }
         }
         return Metrics(dictationsToday: today, dictationsYesterday: yesterday, dictationsTodayChangePercent: todayChange,

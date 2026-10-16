@@ -109,7 +109,7 @@ struct PopoverView: View {
             statCard(value: "\(vm.metrics.dictationsToday.formatted())", label: "today",
                      detail: "(yest. \(vm.metrics.dictationsYesterday.formatted()))",
                      changePercent: vm.metrics.dictationsTodayChangePercent,
-                     changeHint: "vs. the same time a week ago")
+                     changeHint: "vs. yesterday at the same time")
             statCard(value: "\(vm.metrics.wpm7d)", label: "wpm · 7d",
                      changePercent: vm.metrics.wpm7dChangePercent,
                      changeHint: "vs. the same 7 days a week ago")
