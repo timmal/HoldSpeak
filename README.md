@@ -210,3 +210,7 @@ tail -f ~/Library/Logs/HoldSpeak.log
 **Recognizes silence / empty result.** Check the input level in System Settings → Sound → Input. In the logs, look at `finalize: rms=...` — normal speech is ≥ 0.02. If you see `0.0005` the mic is quiet (wrong device / muted / mic TCC not granted).
 
 **Confuses Ukrainian / Russian with English in auto.** Auto relies on `Locale.preferredLanguages`. Make sure the language is actually listed in System Settings → Language & Region, or switch Preferences → Audio from Auto to an explicit Russian / English.
+
+## License
+
+[MIT](LICENSE) © 2026 timmal. Third-party libraries (WhisperKit, GRDB) keep their own licenses.

@@ -1,25 +1,21 @@
-Copyright (c) 2026 timmal. All rights reserved.
+MIT License
 
-This repository and its contents — source code, assets, documentation and
-build artifacts — are proprietary.
+Copyright (c) 2026 timmal
 
-No license is granted. You may not copy, modify, merge, publish, distribute,
-sublicense, sell, or create derivative works of any part of this software,
-in source or binary form, without prior written permission from the copyright
-holder.
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
 
-Viewing this repository on GitHub, and forking it within GitHub as permitted
-by the GitHub Terms of Service, does not grant any of the rights above.
-
-The compiled HoldSpeak application, as distributed by the copyright holder at
-https://holdspeak.app, may be downloaded and used free of charge for personal
-or commercial purposes. Redistribution of the application is not permitted.
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
 
 THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
 IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
 FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-COPYRIGHT HOLDER BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY ARISING
-FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR ITS USE.
-
-Third-party libraries used by HoldSpeak (such as WhisperKit and GRDB) remain
-under their own licenses.
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
