@@ -1,0 +1,25 @@
+Copyright (c) 2026 timmal. All rights reserved.
+
+This repository and its contents — source code, assets, documentation and
+build artifacts — are proprietary.
+
+No license is granted. You may not copy, modify, merge, publish, distribute,
+sublicense, sell, or create derivative works of any part of this software,
+in source or binary form, without prior written permission from the copyright
+holder.
+
+Viewing this repository on GitHub, and forking it within GitHub as permitted
+by the GitHub Terms of Service, does not grant any of the rights above.
+
+The compiled HoldSpeak application, as distributed by the copyright holder at
+https://holdspeak.app, may be downloaded and used free of charge for personal
+or commercial purposes. Redistribution of the application is not permitted.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+COPYRIGHT HOLDER BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY ARISING
+FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR ITS USE.
+
+Third-party libraries used by HoldSpeak (such as WhisperKit and GRDB) remain
+under their own licenses.
