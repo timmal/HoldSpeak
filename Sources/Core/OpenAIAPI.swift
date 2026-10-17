@@ -4,16 +4,18 @@ public enum OpenAIModelID: String, CaseIterable, Identifiable, CloudModel {
     case transcribe = "gpt-transcribe"
     case miniTranscribe = "gpt-4o-mini-transcribe"
     public var id: String { rawValue }
+    /// The open Model dropdown: name, what it's good at, price.
     public var label: String {
         switch self {
-        case .transcribe:     return "GPT Transcribe — most accurate (recommended)"
-        case .miniTranscribe: return "GPT-4o mini Transcribe — cheaper"
+        case .transcribe:     return "\(shortLabel) — most accurate · \(costPerHour)/h"
+        case .miniTranscribe: return "\(shortLabel) — cheaper · \(costPerHour)/h"
         }
     }
+    /// The model's name: closed dropdown, HUD fallback notice, key-editor price hint.
     public var shortLabel: String {
         switch self {
-        case .transcribe:     return "GPT Transcribe"
-        case .miniTranscribe: return "4o mini Transcribe"
+        case .transcribe:     return "OpenAI GPT Transcribe"
+        case .miniTranscribe: return "OpenAI GPT-4o mini"
         }
     }
     /// gpt-transcribe takes the terms as `keywords` and a `languages` list; older

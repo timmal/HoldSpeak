@@ -84,10 +84,10 @@ struct APIKeyEditor: View {
         switch provider {
         case .gemini:
             let model = prefs.geminiModel
-            return "Audio is sent to Google for transcription. Set up billing for the key in AI Studio — with \(model.shortLabel) Google charges about \(model.costPerHour) per hour of speech; without billing the key stops after a couple dozen dictations a day."
+            return "Audio is sent to Google for transcription. Set up billing for the key in AI Studio — \(model.shortLabel) costs about \(model.costPerHour) per hour of speech; without billing the key stops after a couple dozen dictations a day."
         case .openai:
             let model = prefs.openAIModel
-            return "Audio is sent to OpenAI for transcription. With \(model.shortLabel) OpenAI charges about \(model.costPerHour) per hour of speech; the key needs prepaid credits in OpenAI Billing."
+            return "Audio is sent to OpenAI for transcription. \(model.shortLabel) costs about \(model.costPerHour) per hour of speech; the key needs prepaid credits in OpenAI Billing."
         }
     }
 

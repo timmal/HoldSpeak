@@ -10,15 +10,23 @@ public enum ParakeetModelID: String, CaseIterable, Identifiable {
     public var id: String { rawValue }
     public var folderName: String { rawValue }
 
+    /// The open Model dropdown: name, what it's good at, download size.
     public var label: String {
         switch self {
-        case .ultra: return "Ultra — 25 European languages (~610 MB)"
+        case .ultra: return "\(shortLabel) — fastest · 25 European languages · \(downloadSize)"
         }
     }
 
+    /// The model's name: closed dropdown, HUD, fallback hints.
     public var shortLabel: String {
         switch self {
-        case .ultra: return "Ultra (~610 MB)"
+        case .ultra: return "NVIDIA Parakeet Ultra"
+        }
+    }
+
+    public var downloadSize: String {
+        switch self {
+        case .ultra: return "610 MB"
         }
     }
 
@@ -66,7 +74,7 @@ public enum LocalModel: Hashable {
         }
     }
 
-    /// The engine's name in the UI.
+    /// The engine's bare name, for logs; the UI names the model with `shortLabel`.
     public var engineName: String {
         switch self {
         case .whisper:  return "Whisper"
@@ -74,11 +82,19 @@ public enum LocalModel: Hashable {
         }
     }
 
-    /// "Whisper Turbo (~1.5 GB)", "Parakeet Ultra (~610 MB)".
+    /// The model's name: "OpenAI Whisper Turbo", "NVIDIA Parakeet Ultra".
     public var shortLabel: String {
         switch self {
-        case .whisper(let m):  return "Whisper \(m.shortLabel)"
-        case .parakeet(let m): return "Parakeet \(m.shortLabel)"
+        case .whisper(let m):  return m.shortLabel
+        case .parakeet(let m): return m.shortLabel
+        }
+    }
+
+    /// "1.5 GB", "610 MB".
+    public var downloadSize: String {
+        switch self {
+        case .whisper(let m):  return m.downloadSize
+        case .parakeet(let m): return m.downloadSize
         }
     }
 

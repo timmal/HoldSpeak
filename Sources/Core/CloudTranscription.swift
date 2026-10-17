@@ -92,8 +92,8 @@ public enum TranscriptionFailure: Error, Equatable {
     case unreachable(CloudProvider)
     case serviceError(CloudProvider, status: Int)
     /// The cloud engine failed with the wrapped error and the backup local model
-    /// (`backup` names its engine) is still downloading.
-    indirect case backupDownloading(TranscriptionFailure, backup: String = "Whisper")
+    /// (`backup` is its name, `LocalModel.shortLabel`) is still downloading.
+    indirect case backupDownloading(TranscriptionFailure, backup: String = WhisperModelID.turbo.shortLabel)
 
     /// Both lines are shown in the HUD pill, so keep them short.
     public var title: String {

@@ -40,8 +40,8 @@ struct OnboardingView: View {
             Text("How should HoldSpeak recognize speech?")
                 .font(.title2).bold()
             engineCard(.whisper,
-                       title: "Whisper — on this Mac",
-                       detail: "Free and private, works offline. Downloads an ~1.5 GB model now.")
+                       title: "\(prefs.modelID.shortLabel) — on this Mac",
+                       detail: "Free and private, works offline. Downloads a \(prefs.modelID.downloadSize) model now.")
             engineCard(.gemini,
                        title: "Gemini — Google cloud",
                        detail: "Usually more accurate with mixed languages and jargon. Needs your own Google AI Studio API key with billing.")
@@ -134,7 +134,7 @@ struct OnboardingView: View {
             Spacer(minLength: 0)
             if modelsVM.downloading {
                 HStack(spacing: 10) {
-                    Text("Downloading Whisper model…")
+                    Text("Downloading \(prefs.modelID.shortLabel)…")
                         .font(.caption)
                         .foregroundColor(.secondary)
                     ProgressView(value: modelsVM.progress)

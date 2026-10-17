@@ -114,7 +114,7 @@ public final class TranscriptionEngine {
             }
             pttLog("fallback: \(model.shortLabel) not downloaded, starting download")
             onBackupDownloadNeeded?(model)
-            return .failed(.backupDownloading(failure, backup: model.engineName))
+            return .failed(.backupDownloading(failure, backup: model.shortLabel))
         }
         pttLog("fallback: \(selected.rawValue) failed (\(failure)), trying \(model.shortLabel)")
         do {
@@ -128,7 +128,7 @@ public final class TranscriptionEngine {
         switch await transcribeLocally(trimmed, durationMs: durationMs, with: model.engineKind) {
         case .text(let text, let language, let ms, let engine, _):
             return .text(text, language: language, durationMs: ms, engine: engine,
-                         fallback: ModelFallbackNotice(failure: failure, usedEngine: model.engineName))
+                         fallback: ModelFallbackNotice(failure: failure, usedEngine: model.shortLabel))
         case .empty:
             return .empty
         case .failed:

@@ -24,7 +24,7 @@ final class EngineFallbackTests: XCTestCase {
     func test_backupDownloading_keepsOriginalReason() {
         let failure = TranscriptionFailure.backupDownloading(.invalidAPIKey(.openai))
         XCTAssertEqual(failure.title, "OpenAI rejected the API key")
-        XCTAssertEqual(failure.body, "Downloading Whisper as a backup…")
+        XCTAssertEqual(failure.body, "Downloading OpenAI Whisper Turbo as a backup…")
         XCTAssertEqual(failure.displaySeconds, 6)
         XCTAssertFalse(failure.warrantsModelFallback)
     }

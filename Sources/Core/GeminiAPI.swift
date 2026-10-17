@@ -4,16 +4,18 @@ public enum GeminiModelID: String, CaseIterable, Identifiable, CloudModel {
     case transcribe = "gemini-3.5-transcribe"
     case flashLite = "gemini-3.5-flash-lite"
     public var id: String { rawValue }
+    /// The open Model dropdown: name, what it's good at, price.
     public var label: String {
         switch self {
-        case .transcribe: return "3.5 Transcribe — fast (~2 s, recommended)"
-        case .flashLite:  return "3.5 Flash-Lite — better with terms, slower"
+        case .transcribe: return "\(shortLabel) — fast · \(costPerHour)/h"
+        case .flashLite:  return "\(shortLabel) — best with terms, slower · \(costPerHour)/h"
         }
     }
+    /// The model's name: closed dropdown, HUD fallback notice, key-editor price hint.
     public var shortLabel: String {
         switch self {
-        case .transcribe: return "3.5 Transcribe"
-        case .flashLite:  return "3.5 Flash-Lite"
+        case .transcribe: return "Gemini 3.5 Transcribe"
+        case .flashLite:  return "Gemini 3.5 Flash-Lite"
         }
     }
     /// The dedicated transcription model rejects thinking settings; Flash-Lite needs

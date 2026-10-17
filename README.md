@@ -57,7 +57,10 @@ Your preferences, history, and downloaded models live in `~/Library/Application 
 
 ### Model
 
-The default is **Whisper Turbo (large-v3 distilled, ~1.5 GB)**. On macOS 14+ with Apple Silicon you can switch to **Parakeet Ultra (~610 MB)** in Preferences → Audio — another local model, much faster, 25 European languages.
+Preferences → Audio → **Model** lists the models in two groups, best first in each:
+
+- **On this Mac — free, works offline:** **NVIDIA Parakeet Ultra** (fastest, 25 European languages, 610 MB; macOS 14+ on Apple Silicon, hidden elsewhere) and **OpenAI Whisper Turbo** (large-v3 distilled, 99 languages, slower, 1.5 GB — the default).
+- **Cloud — your API key, pay per use:** **OpenAI GPT Transcribe**, **OpenAI GPT-4o mini**, **Gemini 3.5 Transcribe**, **Gemini 3.5 Flash-Lite** — see below. Each item shows its price per hour of speech.
 
 If you already have MacWhisper / another WhisperKit client installed, their models will be picked up automatically. Otherwise the first model is downloaded to `~/Library/Application Support/HoldSpeak/Models/`.
 
@@ -77,8 +80,8 @@ Pick a Gemini model in Preferences → Audio → **Model** (or choose Gemini dur
 
 Models:
 
-- **3.5 Transcribe** (default) — dedicated speech-to-text, ~2 s per dictation, about **$0.30 per hour of speech**.
-- **3.5 Flash-Lite** — cheaper (~$0.06/hour) and better at following the terminology dictionary, but response time varies more.
+- **Gemini 3.5 Transcribe** (default) — dedicated speech-to-text, ~2 s per dictation, about **$0.30 per hour of speech**.
+- **Gemini 3.5 Flash-Lite** — cheaper (~$0.06/hour) and better at following the terminology dictionary, but response time varies more.
 
 If the selected model fails on Google's side (an error that isn't about the key, quota or network), HoldSpeak sends the same audio to the other model and says so in the HUD pill; the failed model is skipped for the next 30 minutes.
 
@@ -98,14 +101,14 @@ Pick an OpenAI model in Preferences → Audio → **Model** (or choose OpenAI du
 
 Models:
 
-- **GPT Transcribe** (default) — OpenAI's current speech-to-text model, about **$0.27 per hour of speech**. Your dictionary's terms go in as keywords, the primary language as a language hint, and in Auto mode the language it detects switches the dictionary.
-- **GPT-4o mini Transcribe** — cheaper, about $0.18 per hour; the terms go into the prompt.
+- **OpenAI GPT Transcribe** (default, `gpt-transcribe`) — OpenAI's current speech-to-text model, about **$0.27 per hour of speech**. Your dictionary's terms go in as keywords, the primary language as a language hint, and in Auto mode the language it detects switches the dictionary.
+- **OpenAI GPT-4o mini** (`gpt-4o-mini-transcribe`) — cheaper, about $0.18 per hour; the terms go into the prompt.
 
 Both are dedicated transcription models rather than chat models, so they don't follow instructions: filler words are removed afterwards from the same editable list as with Whisper. The fallback to the other model on a server-side error works as with Gemini.
 
 ### Fallback to another engine (optional)
 
-With a cloud engine selected, Preferences → Audio → **Fallback: Try other engines if this one fails** (off by default) keeps dictation working when the selected engine can't transcribe — credits used up, quota, a rejected key, the service down, no internet. The same audio then goes to the other cloud engine, if its key is saved, and then to Whisper on this Mac; the HUD says why and who answered (*"OpenAI credits used up · Used Gemini instead"*). Without internet the other cloud engine is skipped and Whisper answers straight away.
+With a cloud engine selected, Preferences → Audio → **Fallback: Try other engines if this one fails** (off by default) keeps dictation working when the selected engine can't transcribe — credits used up, quota, a rejected key, the service down, no internet. The same audio then goes to the other cloud engine, if its key is saved, and then to the local model you picked last (OpenAI Whisper Turbo or NVIDIA Parakeet Ultra) on this Mac; the HUD says why and who answered (*"OpenAI credits used up · Used Gemini instead"*, *"… · Used OpenAI Whisper Turbo instead"*). Without internet the other cloud engine is skipped and the local model answers straight away.
 
 Whisper isn't kept in memory while a cloud engine is selected: the first fallback loads the model (a few extra seconds), then it stays loaded. If the model isn't downloaded yet, the first fallback starts the download and that dictation is lost; without internet it can't be downloaded at all, so download it in advance (the checkbox offers a button).
 
@@ -116,11 +119,11 @@ Privacy: with Gemini or OpenAI, each dictation's audio is sent to Google or Open
 The delay between releasing the hotkey and text appearing in the input is dominated by the Whisper forward pass. Two levers:
 
 - **Pick a faster model.** Preferences → Audio → *Model*:
-  - **Parakeet Ultra (~610 MB)** — fastest local option (well under a second even for long dictations); detects the language itself. macOS 14+ on Apple Silicon.
-  - **Whisper Turbo (~1.5 GB)** — default; any language, but takes a couple of seconds per utterance.
+  - **NVIDIA Parakeet Ultra (610 MB)** — fastest local option (well under a second even for long dictations); detects the language itself. macOS 14+ on Apple Silicon.
+  - **OpenAI Whisper Turbo (1.5 GB)** — default; 99 languages, but takes a couple of seconds per utterance.
 - **Set a fixed language** instead of Auto (Whisper). Preferences → Audio → *Primary language*: picking Russian or English skips an extra language-detection forward pass that Auto mode runs before transcription.
 
-Whisper Tiny and Small are no longer offered: if you had one selected, HoldSpeak switches to Whisper Turbo. Their downloaded files stay in the models folder until you delete them with **Downloaded models → Delete…**.
+Whisper Tiny and Small are no longer offered: if you had one selected, HoldSpeak switches to OpenAI Whisper Turbo. Their downloaded files stay in the models folder until you delete them with **Downloaded models → Delete…**.
 
 ## Usage
 
@@ -136,7 +139,7 @@ By default, presses shorter than **150 ms** don't start recording — the key be
 ## Preferences
 
 - **General** — hotkey, hold threshold, HUD position (under the icon / bottom center), theme (Auto / Light / Dark), launch at login, update check
-- **Audio** — microphone, language, model (Whisper, Gemini or OpenAI), model download / deletion, cloud API key, text cleanup options (period, capitalization, filler words)
+- **Audio** — microphone, language, model (on this Mac: NVIDIA Parakeet Ultra, OpenAI Whisper Turbo; cloud: OpenAI, Gemini), model download / deletion, cloud API key, text cleanup options (period, capitalization, filler words)
 - **Terms** — terminology dictionary (see below)
 - **History** — clear history and reset metrics
 - **Support**

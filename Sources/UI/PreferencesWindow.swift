@@ -320,7 +320,7 @@ struct PreferencesView: View {
     @ViewBuilder private func engineFallbackToggle(_ provider: CloudProvider) -> some View {
         let backups = EngineFallback.cloudBackups(after: provider, hasKey: prefs.hasAPIKey)
         let local = prefs.localModel
-        let chain = (backups.map(\.name) + ["\(local.engineName) on this Mac"]).joined(separator: ", then to ")
+        let chain = (backups.map(\.name) + ["\(local.shortLabel) on this Mac"]).joined(separator: ", then to ")
         VStack(alignment: .leading, spacing: 6) {
             Toggle(isOn: $prefs.engineFallback) {
                 Text("Try other engines if this one fails")
@@ -333,7 +333,7 @@ struct PreferencesView: View {
             if prefs.engineFallback {
                 Group {
                     Text("If the selected engine can't transcribe (credits used up, a rejected key, no internet), the dictation goes to \(chain).")
-                    Text("Download the \(local.engineName) model in advance: the switch is faster, and without internet \(local.engineName) is the only option. The local model you picked last is used.")
+                    Text("Download \(local.shortLabel) in advance: the switch is faster, and without internet it is the only option. The local model you picked last is used.")
                 }
                 .font(.system(size: 11))
                 .foregroundColor(PTT.textSoft(scheme))
@@ -347,7 +347,7 @@ struct PreferencesView: View {
                         Button {
                             Task { await modelsVM.download(local) }
                         } label: {
-                            Text("Download \(local.shortLabel)")
+                            Text("Download \(local.shortLabel) (\(local.downloadSize))")
                         }
                         .pttButton()
                     }
@@ -410,19 +410,18 @@ struct PreferencesView: View {
             labeledRow("Model", alignment: .top) {
                 VStack(alignment: .leading, spacing: 6) {
                     StyledDropdown(selection: $prefs.modelChoice, width: 280, current: prefs.modelChoice.label) {
-                        Section("Whisper — on this Mac, free") {
-                            ForEach(WhisperModelID.allCases) { Text($0.label).tag(ModelChoice.whisper($0)) }
-                        }
-                        if ParakeetSupport.isAvailable {
-                            Section("Parakeet — on this Mac, free") {
+                        // Best first in each section; no "recommended" tags.
+                        Section("On this Mac — free, works offline") {
+                            // Parakeet needs macOS 14 on Apple Silicon; elsewhere only Whisper is listed.
+                            if ParakeetSupport.isAvailable {
                                 ForEach(ParakeetModelID.allCases) { Text($0.label).tag(ModelChoice.parakeet($0)) }
                             }
+                            ForEach(WhisperModelID.allCases) { Text($0.label).tag(ModelChoice.whisper($0)) }
                         }
-                        Section("Gemini — Google cloud, your API key") {
-                            ForEach(GeminiModelID.allCases) { Text($0.label).tag(ModelChoice.gemini($0)) }
-                        }
-                        Section("OpenAI — cloud, your API key") {
+                        Divider()
+                        Section("Cloud — your API key, pay per use") {
                             ForEach(OpenAIModelID.allCases) { Text($0.label).tag(ModelChoice.openai($0)) }
+                            ForEach(GeminiModelID.allCases) { Text($0.label).tag(ModelChoice.gemini($0)) }
                         }
                     }
                     if prefs.engine.isLocal {

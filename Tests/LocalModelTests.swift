@@ -15,16 +15,49 @@ final class LocalModelTests: XCTestCase {
         XCTAssertEqual(ModelChoice.whisper(.turbo).local, .whisper(.turbo))
         XCTAssertNil(ModelChoice.openai(.transcribe).local)
         XCTAssertNil(ModelChoice.gemini(.transcribe).local)
-        XCTAssertEqual(ModelChoice.parakeet(.ultra).label, "Parakeet Ultra (~610 MB)")
         // Dropdown tags must stay unique across engines.
         XCTAssertNotEqual(ModelChoice.parakeet(.ultra).id, ModelChoice.whisper(.turbo).id)
+    }
+
+    func test_modelChoice_closedDropdownLabels() {
+        XCTAssertEqual(ModelChoice.parakeet(.ultra).label, "NVIDIA Parakeet Ultra")
+        XCTAssertEqual(ModelChoice.whisper(.turbo).label, "OpenAI Whisper Turbo")
+        XCTAssertEqual(ModelChoice.openai(.transcribe).label, "OpenAI GPT Transcribe")
+        XCTAssertEqual(ModelChoice.openai(.miniTranscribe).label, "OpenAI GPT-4o mini")
+        XCTAssertEqual(ModelChoice.gemini(.transcribe).label, "Gemini 3.5 Transcribe")
+        XCTAssertEqual(ModelChoice.gemini(.flashLite).label, "Gemini 3.5 Flash-Lite")
+    }
+
+    func test_modelLabels_openDropdown() {
+        XCTAssertEqual(ParakeetModelID.ultra.label, "NVIDIA Parakeet Ultra — fastest · 25 European languages · 610 MB")
+        XCTAssertEqual(WhisperModelID.turbo.label, "OpenAI Whisper Turbo — 99 languages, slower · 1.5 GB")
+        XCTAssertEqual(OpenAIModelID.transcribe.label, "OpenAI GPT Transcribe — most accurate · $0.27/h")
+        XCTAssertEqual(OpenAIModelID.miniTranscribe.label, "OpenAI GPT-4o mini — cheaper · $0.18/h")
+        XCTAssertEqual(GeminiModelID.transcribe.label, "Gemini 3.5 Transcribe — fast · $0.30/h")
+        XCTAssertEqual(GeminiModelID.flashLite.label, "Gemini 3.5 Flash-Lite — best with terms, slower · $0.06/h")
+    }
+
+    func test_modelLabels_neverSayRecommended() {
+        let labels = WhisperModelID.allCases.map(\.label) + ParakeetModelID.allCases.map(\.label)
+            + OpenAIModelID.allCases.map(\.label) + GeminiModelID.allCases.map(\.label)
+        for label in labels {
+            XCTAssertFalse(label.lowercased().contains("recommended"), label)
+        }
+    }
+
+    func test_cloudLabels_takePriceFromCostPerHour() {
+        for m in OpenAIModelID.allCases { XCTAssertTrue(m.label.hasSuffix("· \(m.costPerHour)/h"), m.label) }
+        for m in GeminiModelID.allCases { XCTAssertTrue(m.label.hasSuffix("· \(m.costPerHour)/h"), m.label) }
     }
 
     func test_localModel_namesAndKinds() {
         XCTAssertEqual(LocalModel.parakeet(.ultra).engineKind, .parakeet)
         XCTAssertEqual(LocalModel.parakeet(.ultra).engineName, "Parakeet")
+        XCTAssertEqual(LocalModel.parakeet(.ultra).shortLabel, "NVIDIA Parakeet Ultra")
+        XCTAssertEqual(LocalModel.parakeet(.ultra).downloadSize, "610 MB")
         XCTAssertEqual(LocalModel.whisper(.turbo).engineKind, .whisper)
-        XCTAssertEqual(LocalModel.whisper(.turbo).shortLabel, "Whisper Turbo (~1.5 GB)")
+        XCTAssertEqual(LocalModel.whisper(.turbo).shortLabel, "OpenAI Whisper Turbo")
+        XCTAssertEqual(LocalModel.whisper(.turbo).downloadSize, "1.5 GB")
     }
 
     func test_resolve_localModelForEngineAndFallback() {
@@ -67,9 +100,13 @@ final class LocalModelTests: XCTestCase {
     }
 
     func test_backupDownloading_namesTheLocalEngine() {
-        let failure = TranscriptionFailure.backupDownloading(.unreachable(.openai), backup: "Parakeet")
+        let failure = TranscriptionFailure.backupDownloading(.unreachable(.openai),
+                                                             backup: LocalModel.parakeet(.ultra).shortLabel)
         XCTAssertEqual(failure.title, "OpenAI unreachable")
-        XCTAssertEqual(failure.body, "Downloading Parakeet as a backup…")
+        XCTAssertEqual(failure.body, "Downloading NVIDIA Parakeet Ultra as a backup…")
+        let notice = ModelFallbackNotice(failure: .outOfCredits(.openai),
+                                         usedEngine: LocalModel.whisper(.turbo).shortLabel)
+        XCTAssertEqual(notice.body, "Used OpenAI Whisper Turbo instead")
         XCTAssertEqual(TranscriptionFailure.parakeetModelNotReady.title, "Parakeet model not ready")
     }
 

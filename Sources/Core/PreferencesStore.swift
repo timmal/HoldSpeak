@@ -67,15 +67,21 @@ public enum WhisperModelID: String, CaseIterable, Identifiable {
     // "Downloaded models" and go with its Delete.
     case turbo = "openai_whisper-large-v3-v20240930"
     public var id: String { rawValue }
+    /// The open Model dropdown: name, what it's good at, download size.
     public var label: String {
         switch self {
-        case .turbo: return "Turbo — large-v3 distilled (~1.5 GB, recommended)"
+        case .turbo: return "\(shortLabel) — 99 languages, slower · \(downloadSize)"
         }
     }
-    /// For the closed dropdown, where the full label gets truncated.
+    /// The model's name: closed dropdown, HUD, fallback hints, onboarding.
     public var shortLabel: String {
         switch self {
-        case .turbo: return "Turbo (~1.5 GB)"
+        case .turbo: return "OpenAI Whisper Turbo"
+        }
+    }
+    public var downloadSize: String {
+        switch self {
+        case .turbo: return "1.5 GB"
         }
     }
 }
@@ -120,13 +126,13 @@ public enum ModelChoice: Hashable, Identifiable {
         case .openai(let m):   return m.rawValue
         }
     }
-    /// Shown in the closed dropdown; the open menu lists the full model labels.
+    /// Shown in the closed dropdown: the model's name. The open menu lists the full labels.
     public var label: String {
         switch self {
-        case .whisper(let m):  return "Whisper \(m.shortLabel)"
-        case .parakeet(let m): return "Parakeet \(m.shortLabel)"
-        case .gemini(let m):   return "Gemini \(m.shortLabel)"
-        case .openai(let m):   return "OpenAI \(m.shortLabel)"
+        case .whisper(let m):  return m.shortLabel
+        case .parakeet(let m): return m.shortLabel
+        case .gemini(let m):   return m.shortLabel
+        case .openai(let m):   return m.shortLabel
         }
     }
 

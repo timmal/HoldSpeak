@@ -168,7 +168,7 @@ final class GeminiAPITests: XCTestCase {
 
     func test_fallbackNotice_namesBothModels() {
         let notice = ModelFallbackNotice(failed: GeminiModelID.transcribe, used: .flashLite)
-        XCTAssertEqual(notice.title, "3.5 Transcribe unavailable")
-        XCTAssertEqual(notice.body, "Used 3.5 Flash-Lite instead")
+        XCTAssertEqual(notice.title, "Gemini 3.5 Transcribe unavailable")
+        XCTAssertEqual(notice.body, "Used Gemini 3.5 Flash-Lite instead")
     }
 }

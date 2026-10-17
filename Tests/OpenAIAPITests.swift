@@ -116,7 +116,7 @@ final class OpenAIAPITests: XCTestCase {
         XCTAssertEqual(OpenAIModelID.transcribe.costPerHour, "$0.27")
         XCTAssertEqual(OpenAIModelID.miniTranscribe.costPerHour, "$0.18")
         let notice = ModelFallbackNotice(failed: OpenAIModelID.transcribe, used: .miniTranscribe)
-        XCTAssertEqual(notice.title, "GPT Transcribe unavailable")
-        XCTAssertEqual(notice.body, "Used 4o mini Transcribe instead")
+        XCTAssertEqual(notice.title, "OpenAI GPT Transcribe unavailable")
+        XCTAssertEqual(notice.body, "Used OpenAI GPT-4o mini instead")
     }
 }
