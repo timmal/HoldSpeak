@@ -89,7 +89,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         appliedLocalModel = prefs.localModel
         appliedEngine = prefs.engineChosen ? prefs.engine : nil
         // A fresh install loads nothing until onboarding picks an engine; the cloud engines
-        // never need a local model in memory (~800 MB for Whisper Turbo).
+        // never need a local model in memory (~1.5 GB for Whisper Turbo).
         if prefs.engineChosen, prefs.engine.isLocal {
             loadModel(prefs.localModel)
         }

@@ -12,13 +12,13 @@ public enum ParakeetModelID: String, CaseIterable, Identifiable {
 
     public var label: String {
         switch self {
-        case .ultra: return "Ultra — 25 European languages (~630 MB)"
+        case .ultra: return "Ultra — 25 European languages (~610 MB)"
         }
     }
 
     public var shortLabel: String {
         switch self {
-        case .ultra: return "Ultra (~630 MB)"
+        case .ultra: return "Ultra (~610 MB)"
         }
     }
 
@@ -74,7 +74,7 @@ public enum LocalModel: Hashable {
         }
     }
 
-    /// "Whisper Turbo (~800 MB)", "Parakeet Ultra (~630 MB)".
+    /// "Whisper Turbo (~1.5 GB)", "Parakeet Ultra (~610 MB)".
     public var shortLabel: String {
         switch self {
         case .whisper(let m):  return "Whisper \(m.shortLabel)"

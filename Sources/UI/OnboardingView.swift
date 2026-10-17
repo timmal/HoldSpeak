@@ -41,7 +41,7 @@ struct OnboardingView: View {
                 .font(.title2).bold()
             engineCard(.whisper,
                        title: "Whisper — on this Mac",
-                       detail: "Free and private, works offline. Downloads an ~800 MB model now.")
+                       detail: "Free and private, works offline. Downloads an ~1.5 GB model now.")
             engineCard(.gemini,
                        title: "Gemini — Google cloud",
                        detail: "Usually more accurate with mixed languages and jargon. Needs your own Google AI Studio API key with billing.")

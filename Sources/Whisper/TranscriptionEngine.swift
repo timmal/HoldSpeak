@@ -35,7 +35,7 @@ public final class TranscriptionEngine {
         }
     }
 
-    /// Frees the local models (~800 MB for Whisper Turbo) when the user switches away.
+    /// Frees the local models (~1.5 GB for Whisper Turbo) when the user switches away.
     public func unloadLocal(except keep: TranscriptionEngineKind? = nil) {
         if keep != .whisper { whisper.unload() }
         if keep != .parakeet { parakeet.unload() }

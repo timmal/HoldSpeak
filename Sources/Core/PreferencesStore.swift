@@ -69,13 +69,13 @@ public enum WhisperModelID: String, CaseIterable, Identifiable {
     public var id: String { rawValue }
     public var label: String {
         switch self {
-        case .turbo: return "Turbo — large-v3 distilled (~800 MB, recommended)"
+        case .turbo: return "Turbo — large-v3 distilled (~1.5 GB, recommended)"
         }
     }
     /// For the closed dropdown, where the full label gets truncated.
     public var shortLabel: String {
         switch self {
-        case .turbo: return "Turbo (~800 MB)"
+        case .turbo: return "Turbo (~1.5 GB)"
         }
     }
 }

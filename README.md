@@ -57,7 +57,7 @@ Your preferences, history, and downloaded models live in `~/Library/Application 
 
 ### Model
 
-The default is **Whisper Turbo (large-v3 distilled, ~800 MB)**. On macOS 14+ with Apple Silicon you can switch to **Parakeet Ultra (~630 MB)** in Preferences → Audio — another local model, much faster, 25 European languages.
+The default is **Whisper Turbo (large-v3 distilled, ~1.5 GB)**. On macOS 14+ with Apple Silicon you can switch to **Parakeet Ultra (~610 MB)** in Preferences → Audio — another local model, much faster, 25 European languages.
 
 If you already have MacWhisper / another WhisperKit client installed, their models will be picked up automatically. Otherwise the first model is downloaded to `~/Library/Application Support/HoldSpeak/Models/`.
 
@@ -116,8 +116,8 @@ Privacy: with Gemini or OpenAI, each dictation's audio is sent to Google or Open
 The delay between releasing the hotkey and text appearing in the input is dominated by the Whisper forward pass. Two levers:
 
 - **Pick a faster model.** Preferences → Audio → *Model*:
-  - **Parakeet Ultra (~630 MB)** — fastest local option (well under a second even for long dictations); detects the language itself. macOS 14+ on Apple Silicon.
-  - **Whisper Turbo (~800 MB)** — default; any language, but takes a couple of seconds per utterance.
+  - **Parakeet Ultra (~610 MB)** — fastest local option (well under a second even for long dictations); detects the language itself. macOS 14+ on Apple Silicon.
+  - **Whisper Turbo (~1.5 GB)** — default; any language, but takes a couple of seconds per utterance.
 - **Set a fixed language** instead of Auto (Whisper). Preferences → Audio → *Primary language*: picking Russian or English skips an extra language-detection forward pass that Auto mode runs before transcription.
 
 Whisper Tiny and Small are no longer offered: if you had one selected, HoldSpeak switches to Whisper Turbo. Their downloaded files stay in the models folder until you delete them with **Downloaded models → Delete…**.

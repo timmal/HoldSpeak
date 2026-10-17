@@ -15,7 +15,7 @@ final class LocalModelTests: XCTestCase {
         XCTAssertEqual(ModelChoice.whisper(.turbo).local, .whisper(.turbo))
         XCTAssertNil(ModelChoice.openai(.transcribe).local)
         XCTAssertNil(ModelChoice.gemini(.transcribe).local)
-        XCTAssertEqual(ModelChoice.parakeet(.ultra).label, "Parakeet Ultra (~630 MB)")
+        XCTAssertEqual(ModelChoice.parakeet(.ultra).label, "Parakeet Ultra (~610 MB)")
         // Dropdown tags must stay unique across engines.
         XCTAssertNotEqual(ModelChoice.parakeet(.ultra).id, ModelChoice.whisper(.turbo).id)
     }
@@ -24,7 +24,7 @@ final class LocalModelTests: XCTestCase {
         XCTAssertEqual(LocalModel.parakeet(.ultra).engineKind, .parakeet)
         XCTAssertEqual(LocalModel.parakeet(.ultra).engineName, "Parakeet")
         XCTAssertEqual(LocalModel.whisper(.turbo).engineKind, .whisper)
-        XCTAssertEqual(LocalModel.whisper(.turbo).shortLabel, "Whisper Turbo (~800 MB)")
+        XCTAssertEqual(LocalModel.whisper(.turbo).shortLabel, "Whisper Turbo (~1.5 GB)")
     }
 
     func test_resolve_localModelForEngineAndFallback() {
