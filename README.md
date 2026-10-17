@@ -212,4 +212,6 @@ tail -f ~/Library/Logs/HoldSpeak.log
 
 ## License
 
-[MIT](LICENSE) © 2026 timmal. Third-party libraries (WhisperKit, GRDB) keep their own licenses.
+[MIT](LICENSE) © 2026 timmal. Third-party libraries (WhisperKit, FluidAudio, GRDB) keep their own licenses.
+
+The Parakeet engine downloads [Parakeet Ultra](https://huggingface.co/moondream/parakeet-ultra) by moondream, based on [NVIDIA Parakeet TDT 0.6B v3](https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3), in the [Core ML build](https://huggingface.co/FluidInference/parakeet-ultra-coreml) by FluidInference. The model weights are licensed [CC-BY-4.0](https://creativecommons.org/licenses/by/4.0/).
