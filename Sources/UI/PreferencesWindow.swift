@@ -9,26 +9,26 @@ final class ModelsViewModel: ObservableObject {
     /// Disk used by models HoldSpeak downloaded itself (not other apps' copies).
     @Published var managedBytes: Int64 = 0
     /// Called on main after a successful download, so the engine can load the model.
-    var onDownloaded: ((WhisperModelID) -> Void)?
+    var onDownloaded: ((LocalModel) -> Void)?
     /// Called on main after the downloaded models were deleted.
     var onDeleted: (() -> Void)?
 
-    func isLocated(_ id: WhisperModelID) -> Bool { ModelManager.shared.locateModel(id) != nil }
+    func isLocated(_ model: LocalModel) -> Bool { ModelManager.shared.locate(model) != nil }
 
-    func status(for id: WhisperModelID) -> String {
-        isLocated(id) ? "Downloaded" : "Not downloaded"
+    func status(for model: LocalModel) -> String {
+        isLocated(model) ? "Downloaded" : "Not downloaded"
     }
 
-    func download(_ id: WhisperModelID) async {
+    func download(_ model: LocalModel) async {
         guard !downloading else { return }
         downloading = true
         progress = 0
         defer { downloading = false }
         do {
-            _ = try await ModelManager.shared.download(id) { [weak self] p in
+            _ = try await ModelManager.shared.download(model) { [weak self] p in
                 Task { @MainActor in self?.progress = p }
             }
-            onDownloaded?(id)
+            onDownloaded?(model)
         } catch {
             NSLog("Model download failed: \(error)")
         }
@@ -45,7 +45,7 @@ final class ModelsViewModel: ObservableObject {
     func deleteManagedModels() {
         do {
             try ModelManager.shared.deleteManagedModels()
-            pttLog("Deleted downloaded Whisper models")
+            pttLog("Deleted downloaded models")
         } catch {
             pttLog("Deleting models failed: \(error)")
         }
@@ -319,7 +319,8 @@ struct PreferencesView: View {
 
     @ViewBuilder private func engineFallbackToggle(_ provider: CloudProvider) -> some View {
         let backups = EngineFallback.cloudBackups(after: provider, hasKey: prefs.hasAPIKey)
-        let chain = (backups.map(\.name) + ["Whisper on this Mac"]).joined(separator: ", then to ")
+        let local = prefs.localModel
+        let chain = (backups.map(\.name) + ["\(local.engineName) on this Mac"]).joined(separator: ", then to ")
         VStack(alignment: .leading, spacing: 6) {
             Toggle(isOn: $prefs.engineFallback) {
                 Text("Try other engines if this one fails")
@@ -332,21 +333,21 @@ struct PreferencesView: View {
             if prefs.engineFallback {
                 Group {
                     Text("If the selected engine can't transcribe (credits used up, a rejected key, no internet), the dictation goes to \(chain).")
-                    Text("Download the Whisper model in advance: the switch is faster, and without internet Whisper is the only option.")
+                    Text("Download the \(local.engineName) model in advance: the switch is faster, and without internet \(local.engineName) is the only option. The local model you picked last is used.")
                 }
                 .font(.system(size: 11))
                 .foregroundColor(PTT.textSoft(scheme))
                 .fixedSize(horizontal: false, vertical: true)
                 .frame(width: 280, alignment: .leading)
 
-                if !modelsVM.isLocated(prefs.modelID) {
+                if !modelsVM.isLocated(local) {
                     if modelsVM.downloading {
                         ProgressView(value: modelsVM.progress).frame(width: 240)
                     } else {
                         Button {
-                            Task { await modelsVM.download(prefs.modelID) }
+                            Task { await modelsVM.download(local) }
                         } label: {
-                            Text("Download Whisper \(prefs.modelID.shortLabel)")
+                            Text("Download \(local.shortLabel)")
                         }
                         .pttButton()
                     }
@@ -358,8 +359,8 @@ struct PreferencesView: View {
     private func confirmDeleteModels() {
         let size = ByteCountFormatter.string(fromByteCount: modelsVM.managedBytes, countStyle: .file)
         let alert = NSAlert()
-        alert.messageText = "Delete downloaded Whisper models?"
-        alert.informativeText = "Frees \(size). Only models HoldSpeak downloaded are removed — copies from MacWhisper or other apps stay. You can download a model again at any time."
+        alert.messageText = "Delete downloaded models?"
+        alert.informativeText = "Frees \(size). Only models HoldSpeak downloaded (Whisper and Parakeet) are removed — copies from MacWhisper or other apps stay. You can download a model again at any time."
         alert.addButton(withTitle: "Delete")
         alert.addButton(withTitle: "Cancel")
         if alert.runModal() == .alertFirstButtonReturn {
@@ -398,7 +399,9 @@ struct PreferencesView: View {
                     StyledDropdown(selection: $prefs.primaryLanguage, width: 280, current: prefs.primaryLanguage.label) {
                         ForEach(PrimaryLanguage.allCases) { Text($0.label).tag($0) }
                     }
-                    Text("Forcing a language helps on short utterances.")
+                    Text(prefs.engine == .parakeet
+                         ? "Parakeet detects the language itself; this picks the Terms list."
+                         : "Forcing a language helps on short utterances.")
                         .font(.system(size: 11))
                         .foregroundColor(PTT.textSoft(scheme))
                 }
@@ -410,6 +413,11 @@ struct PreferencesView: View {
                         Section("Whisper — on this Mac, free") {
                             ForEach(WhisperModelID.allCases) { Text($0.label).tag(ModelChoice.whisper($0)) }
                         }
+                        if ParakeetSupport.isAvailable {
+                            Section("Parakeet — on this Mac, free") {
+                                ForEach(ParakeetModelID.allCases) { Text($0.label).tag(ModelChoice.parakeet($0)) }
+                            }
+                        }
                         Section("Gemini — Google cloud, your API key") {
                             ForEach(GeminiModelID.allCases) { Text($0.label).tag(ModelChoice.gemini($0)) }
                         }
@@ -417,31 +425,38 @@ struct PreferencesView: View {
                             ForEach(OpenAIModelID.allCases) { Text($0.label).tag(ModelChoice.openai($0)) }
                         }
                     }
-                    if prefs.engine == .whisper {
+                    if prefs.engine.isLocal {
                         HStack(spacing: 6) {
                             Circle()
-                                .fill(modelsVM.isLocated(prefs.modelID) ? PTT.statusGreen : PTT.textSoft(scheme))
+                                .fill(modelsVM.isLocated(prefs.localModel) ? PTT.statusGreen : PTT.textSoft(scheme))
                                 .frame(width: 8, height: 8)
-                            Text(modelsVM.status(for: prefs.modelID))
+                            Text(modelsVM.status(for: prefs.localModel))
                                 .font(.system(size: 11))
                                 .foregroundColor(PTT.textMuted(scheme))
                         }
                     }
+                    if prefs.engine == .parakeet {
+                        Text("Detects the language by itself; English, Russian, Ukrainian and 22 more European languages. Punctuation and capitals come from the model.")
+                            .font(.system(size: 11))
+                            .foregroundColor(PTT.textSoft(scheme))
+                            .fixedSize(horizontal: false, vertical: true)
+                            .frame(width: 280, alignment: .leading)
+                    }
                 }
             }
 
-            if prefs.engine == .whisper {
+            if prefs.engine.isLocal {
                 labeledRow("") {
                     if modelsVM.downloading {
                         ProgressView(value: modelsVM.progress).frame(width: 240)
                     } else {
                         Button {
-                            Task { await modelsVM.download(prefs.modelID) }
+                            Task { await modelsVM.download(prefs.localModel) }
                         } label: {
                             Text("Download selected model")
                         }
                         .pttButton()
-                        .disabled(modelsVM.isLocated(prefs.modelID))
+                        .disabled(modelsVM.isLocated(prefs.localModel))
                     }
                 }
             } else if let provider = prefs.engine.cloudProvider {

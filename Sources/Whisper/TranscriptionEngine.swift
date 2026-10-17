@@ -15,22 +15,36 @@ public enum TranscriptionResult {
 @MainActor
 public final class TranscriptionEngine {
     private let whisper = WhisperTranscriber()
+    private let parakeet = ParakeetTranscriber()
     private let gemini = GeminiTranscriber()
     private let openai = OpenAITranscriber()
     private var accumulated: [Float] = []
     private let vad = SilenceTrimmer()
-    /// The backup Whisper model isn't on disk: start downloading it (with progress in
+    /// The backup local model isn't on disk: start downloading it (with progress in
     /// Preferences). Called on main.
-    public var onBackupDownloadNeeded: ((WhisperModelID) -> Void)?
+    public var onBackupDownloadNeeded: ((LocalModel) -> Void)?
 
     public init() {}
 
-    public func preload(model: WhisperModelID) async throws {
-        try await whisper.preload(model: model)
+    /// Loads `model` and frees the other local engine's model: only one stays in memory.
+    public func preload(_ model: LocalModel) async throws {
+        unloadLocal(except: model.engineKind)
+        switch model {
+        case .whisper(let id):  try await whisper.preload(model: id)
+        case .parakeet(let id): try await parakeet.preload(model: id)
+        }
     }
 
-    public func unloadWhisper() {
-        whisper.unload()
+    /// Frees the local models (~800 MB for Whisper Turbo) when the user switches away.
+    public func unloadLocal(except keep: TranscriptionEngineKind? = nil) {
+        if keep != .whisper { whisper.unload() }
+        if keep != .parakeet { parakeet.unload() }
+    }
+
+    private func transcribeLocally(_ trimmed: [Float], durationMs: Int, with kind: TranscriptionEngineKind) async -> TranscriptionResult {
+        kind == .parakeet
+            ? await parakeet.transcribe(trimmed, durationMs: durationMs)
+            : await whisper.transcribe(trimmed, durationMs: durationMs)
     }
 
     /// Hands over everything fed since the last call and starts a fresh buffer.
@@ -58,7 +72,7 @@ public final class TranscriptionEngine {
         pttLog("finalize: VAD raw=\(rawMs)ms → trimmed=\(durationMs)ms \(vad.stats(samples))")
         let prefs = PreferencesStore.shared
         guard let selected = prefs.engine.cloudProvider else {
-            return await whisper.transcribe(trimmed, durationMs: durationMs)
+            return await transcribeLocally(trimmed, durationMs: durationMs, with: prefs.engine)
         }
         let result = await transcribe(trimmed, durationMs: durationMs, with: selected)
         guard case .failed(let failure) = result, prefs.engineFallback else { return result }
@@ -73,7 +87,7 @@ public final class TranscriptionEngine {
     }
 
     /// The selected cloud engine failed with `failure`: the other cloud engines with a
-    /// saved key, then local Whisper. The HUD shows `failure`, the reason for the switch.
+    /// saved key, then the local model picked last (Whisper or Parakeet). The HUD shows `failure`, the reason for the switch.
     private func fallBack(_ trimmed: [Float], durationMs: Int, after selected: CloudProvider,
                           failure: TranscriptionFailure) async -> TranscriptionResult {
         let prefs = PreferencesStore.shared
@@ -91,30 +105,30 @@ public final class TranscriptionEngine {
             }
         }
 
-        let model = prefs.modelID
-        guard ModelManager.shared.locateModel(model) != nil else {
+        let model = prefs.localModel
+        guard ModelManager.shared.locate(model) != nil else {
             // Without a connection there is nothing to download it with.
             if offline {
-                pttLog("fallback: offline and Whisper \(model.rawValue) not downloaded")
+                pttLog("fallback: offline and \(model.shortLabel) not downloaded")
                 return .failed(failure)
             }
-            pttLog("fallback: Whisper \(model.rawValue) not downloaded, starting download")
+            pttLog("fallback: \(model.shortLabel) not downloaded, starting download")
             onBackupDownloadNeeded?(model)
-            return .failed(.backupDownloading(failure))
+            return .failed(.backupDownloading(failure, backup: model.engineName))
         }
-        pttLog("fallback: \(selected.rawValue) failed (\(failure)), trying Whisper \(model.rawValue)")
+        pttLog("fallback: \(selected.rawValue) failed (\(failure)), trying \(model.shortLabel)")
         do {
             // Loads the model on the first fallback; it then stays loaded until the
             // user switches engines.
-            try await whisper.preload(model: model)
+            try await preload(model)
         } catch {
-            pttLog("fallback: Whisper load failed: \(error)")
+            pttLog("fallback: \(model.engineName) load failed: \(error)")
             return .failed(failure)
         }
-        switch await whisper.transcribe(trimmed, durationMs: durationMs) {
+        switch await transcribeLocally(trimmed, durationMs: durationMs, with: model.engineKind) {
         case .text(let text, let language, let ms, let engine, _):
             return .text(text, language: language, durationMs: ms, engine: engine,
-                         fallback: ModelFallbackNotice(failure: failure, usedEngine: "Whisper"))
+                         fallback: ModelFallbackNotice(failure: failure, usedEngine: model.engineName))
         case .empty:
             return .empty
         case .failed:

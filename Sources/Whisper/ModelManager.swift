@@ -42,6 +42,32 @@ public final class ModelManager {
         return nil
     }
 
+    /// Where FluidAudio-based apps (and FluidAudio's own CLI) keep Parakeet by default.
+    public func externalFluidAudioDirectory() -> URL {
+        let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        return base.appendingPathComponent("FluidAudio/Models")
+    }
+
+    /// HoldSpeak's own folder for `id`; downloads go here.
+    public func parakeetDirectory(_ id: ParakeetModelID) -> URL {
+        managedDirectory().appendingPathComponent(id.folderName)
+    }
+
+    /// A complete copy of `id`: HoldSpeak's own, else another FluidAudio app's.
+    /// nil where Parakeet can't run (macOS 13, Intel).
+    public func locateParakeet(_ id: ParakeetModelID) -> URL? {
+        guard ParakeetSupport.isAvailable else { return nil }
+        return [parakeetDirectory(id), externalFluidAudioDirectory().appendingPathComponent(id.folderName)]
+            .first { ParakeetSupport.modelExists(id, in: $0) }
+    }
+
+    public func locate(_ model: LocalModel) -> URL? {
+        switch model {
+        case .whisper(let id):  return locateModel(id)
+        case .parakeet(let id): return locateParakeet(id)
+        }
+    }
+
     /// True when HoldSpeak itself has downloaded at least one model (older versions
     /// fetched one automatically on first launch).
     public func hasManagedModels() -> Bool {
@@ -50,7 +76,7 @@ public final class ModelManager {
     }
 
     /// Bytes on disk in the folders HoldSpeak downloads into. Models found in
-    /// MacWhisper's or ~/Documents' folders belong to other apps and are not counted.
+    /// MacWhisper's, FluidAudio's or ~/Documents' folders belong to other apps and are not counted.
     public func managedBytes() -> Int64 {
         [managedDirectory(), downloadCacheDirectory()].reduce(0) { $0 + Self.size(of: $1) }
     }
@@ -73,6 +99,21 @@ public final class ModelManager {
             if values?.isRegularFile == true { total += Int64(values?.totalFileAllocatedSize ?? 0) }
         }
         return total
+    }
+
+    @MainActor
+    public func download(_ model: LocalModel,
+                         progress: @escaping @Sendable (Double) -> Void) async throws -> URL {
+        switch model {
+        case .whisper(let id):
+            return try await download(id, progress: progress)
+        case .parakeet(let id):
+            guard let engine = ParakeetLoader.engine() else { throw ParakeetError.unavailable }
+            let dir = parakeetDirectory(id)
+            try FileManager.default.createDirectory(at: managedDirectory(), withIntermediateDirectories: true)
+            try await engine.download(model: id.rawValue, to: dir.path, progress: progress)
+            return dir
+        }
     }
 
     public func download(_ id: WhisperModelID,
