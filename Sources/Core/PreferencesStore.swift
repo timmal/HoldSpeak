@@ -61,22 +61,20 @@ public enum PrimaryLanguage: String, CaseIterable, Identifiable {
 }
 
 public enum WhisperModelID: String, CaseIterable, Identifiable {
-    case tiny = "openai_whisper-tiny"
-    case small = "openai_whisper-small"
+    // Tiny ("openai_whisper-tiny") and Small ("openai_whisper-small") were removed in
+    // HS-13; PreferencesStore.migrateLegacyDefaults moves their users to Turbo. Files
+    // already downloaded stay in HoldSpeak's models folder, are counted in
+    // "Downloaded models" and go with its Delete.
     case turbo = "openai_whisper-large-v3-v20240930"
     public var id: String { rawValue }
     public var label: String {
         switch self {
-        case .tiny:  return "Tiny (~40 MB)"
-        case .small: return "Small (~250 MB)"
         case .turbo: return "Turbo — large-v3 distilled (~800 MB, recommended)"
         }
     }
     /// For the closed dropdown, where the full label gets truncated.
     public var shortLabel: String {
         switch self {
-        case .tiny:  return "Tiny (~40 MB)"
-        case .small: return "Small (~250 MB)"
         case .turbo: return "Turbo (~800 MB)"
         }
     }
@@ -301,6 +299,25 @@ public final class PreferencesStore: ObservableObject {
         }
     }
 
+    /// Rewrites a saved Whisper model that is no longer offered (Tiny, Small) to Turbo.
+    /// `@AppStorage` already reads an unknown raw value as its default, but the stale
+    /// string would stay in the defaults; only that one key is touched. The fallback
+    /// chain's "localEngine" holds the engine kind ("whisper"), not the model, so it
+    /// keeps pointing at Whisper and now resolves to Turbo.
+    /// Returns the raw value that was replaced, nil when nothing changed.
+    @discardableResult
+    public static func migrateLegacyDefaults(_ defaults: UserDefaults) -> String? {
+        guard let raw = defaults.string(forKey: "modelID"), WhisperModelID(rawValue: raw) == nil else {
+            return nil
+        }
+        defaults.set(WhisperModelID.turbo.rawValue, forKey: "modelID")
+        return raw
+    }
+
     public static let shared = PreferencesStore()
-    private init() {}
+    private init() {
+        if let removed = Self.migrateLegacyDefaults(.standard) {
+            pttLog("Prefs: Whisper model \(removed) is no longer offered, switched to \(WhisperModelID.turbo.rawValue)")
+        }
+    }
 }

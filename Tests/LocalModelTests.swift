@@ -29,19 +29,19 @@ final class LocalModelTests: XCTestCase {
 
     func test_resolve_localModelForEngineAndFallback() {
         func resolve(_ engine: TranscriptionEngineKind, last: TranscriptionEngineKind?, available: Bool = true) -> LocalModel {
-            LocalModel.resolve(engine: engine, lastLocal: last, whisper: .small, parakeet: .ultra, parakeetAvailable: available)
+            LocalModel.resolve(engine: engine, lastLocal: last, whisper: .turbo, parakeet: .ultra, parakeetAvailable: available)
         }
         // A local engine is its own local model.
         XCTAssertEqual(resolve(.parakeet, last: .whisper), .parakeet(.ultra))
-        XCTAssertEqual(resolve(.whisper, last: .parakeet), .whisper(.small))
+        XCTAssertEqual(resolve(.whisper, last: .parakeet), .whisper(.turbo))
         // Cloud engines fall back to the local engine picked last; Whisper by default.
         XCTAssertEqual(resolve(.openai, last: .parakeet), .parakeet(.ultra))
-        XCTAssertEqual(resolve(.gemini, last: .whisper), .whisper(.small))
-        XCTAssertEqual(resolve(.openai, last: nil), .whisper(.small))
-        XCTAssertEqual(resolve(.openai, last: .gemini), .whisper(.small))
+        XCTAssertEqual(resolve(.gemini, last: .whisper), .whisper(.turbo))
+        XCTAssertEqual(resolve(.openai, last: nil), .whisper(.turbo))
+        XCTAssertEqual(resolve(.openai, last: .gemini), .whisper(.turbo))
         // macOS 13 / Intel: Parakeet reads as Whisper.
-        XCTAssertEqual(resolve(.parakeet, last: .parakeet, available: false), .whisper(.small))
-        XCTAssertEqual(resolve(.openai, last: .parakeet, available: false), .whisper(.small))
+        XCTAssertEqual(resolve(.parakeet, last: .parakeet, available: false), .whisper(.turbo))
+        XCTAssertEqual(resolve(.openai, last: .parakeet, available: false), .whisper(.turbo))
         XCTAssertEqual(LocalModel.supported(.parakeet, parakeetAvailable: false), .whisper)
         XCTAssertEqual(LocalModel.supported(.openai, parakeetAvailable: false), .openai)
     }
