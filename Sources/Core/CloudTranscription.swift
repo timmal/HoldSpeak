@@ -54,7 +54,7 @@ public struct ModelFallbackPolicy<Model: CloudModel> {
     }
 }
 
-/// Cloud engines to try after `selected` fails, before local Whisper: the other
+/// Cloud engines to try after `selected` fails, before the local model: the other
 /// providers whose key is saved.
 public enum EngineFallback {
     public static func cloudBackups(after selected: CloudProvider,
@@ -83,6 +83,7 @@ public struct ModelFallbackNotice: Equatable {
 /// Why a dictation produced no text, worded for the HUD pill.
 public enum TranscriptionFailure: Error, Equatable {
     case whisperModelNotReady
+    case parakeetModelNotReady
     case missingAPIKey(CloudProvider)
     case invalidAPIKey(CloudProvider)
     case quotaExceeded(CloudProvider, daily: Bool, retryAfterSeconds: Int?)
@@ -90,14 +91,15 @@ public enum TranscriptionFailure: Error, Equatable {
     case outOfCredits(CloudProvider)
     case unreachable(CloudProvider)
     case serviceError(CloudProvider, status: Int)
-    /// The cloud engine failed with the wrapped error and the backup Whisper model
-    /// is still downloading.
-    indirect case backupDownloading(TranscriptionFailure)
+    /// The cloud engine failed with the wrapped error and the backup local model
+    /// (`backup` names its engine) is still downloading.
+    indirect case backupDownloading(TranscriptionFailure, backup: String = "Whisper")
 
     /// Both lines are shown in the HUD pill, so keep them short.
     public var title: String {
         switch self {
         case .whisperModelNotReady:  return "Whisper model not ready"
+        case .parakeetModelNotReady: return "Parakeet model not ready"
         case .missingAPIKey(let p):  return "No \(p.name) API key"
         case .invalidAPIKey(let p):  return "\(p.company) rejected the API key"
         case .quotaExceeded(let p, let daily, _):
@@ -105,13 +107,14 @@ public enum TranscriptionFailure: Error, Equatable {
         case .outOfCredits(let p):   return "\(p.name) credits used up"
         case .unreachable(let p):    return "\(p.name) unreachable"
         case .serviceError(let p, let status): return "\(p.name) error (HTTP \(status))"
-        case .backupDownloading(let failure):  return failure.title
+        case .backupDownloading(let failure, _): return failure.title
         }
     }
 
     public var body: String {
         switch self {
-        case .whisperModelNotReady: return "Still loading, or download it in Preferences"
+        case .whisperModelNotReady, .parakeetModelNotReady:
+            return "Still loading, or download it in Preferences"
         case .missingAPIKey:        return "Add it in Preferences → Audio"
         case .invalidAPIKey:        return "Check it in Preferences → Audio"
         // A Gemini key without billing runs on the free tier: a couple dozen requests a day.
@@ -125,7 +128,7 @@ public enum TranscriptionFailure: Error, Equatable {
         case .outOfCredits:         return "Add credits or raise the limit in OpenAI Billing"
         case .unreachable:          return "Check your internet connection"
         case .serviceError:         return "Try again in a moment"
-        case .backupDownloading:    return "Downloading Whisper as a backup…"
+        case .backupDownloading(_, let backup): return "Downloading \(backup) as a backup…"
         }
     }
 
@@ -136,7 +139,7 @@ public enum TranscriptionFailure: Error, Equatable {
         return false
     }
 
-    /// No connection: other cloud engines would fail the same way, only Whisper can help.
+    /// No connection: other cloud engines would fail the same way, only the local model can help.
     public var isOffline: Bool {
         if case .unreachable = self { return true }
         return false

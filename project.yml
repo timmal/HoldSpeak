@@ -12,6 +12,10 @@ packages:
   WhisperKit:
     url: https://github.com/argmaxinc/WhisperKit
     from: 0.9.0
+  # Parakeet (local engine). Needs macOS 14, so only HoldSpeakParakeet links it.
+  FluidAudio:
+    url: https://github.com/FluidInference/FluidAudio
+    exactVersion: 0.17.7
 
 settings:
   base:
@@ -41,6 +45,7 @@ targets:
       - path: Sources/ObjCCatch
       - path: Sources/Whisper
         optional: true
+      - path: Sources/ParakeetShared
       - path: Resources/radio.svg
         buildPhase: resources
       - path: Resources/settings.svg
@@ -58,6 +63,10 @@ targets:
         product: GRDB
       - package: WhisperKit
         product: WhisperKit
+      # Embedded, not linked: the app (macOS 13) loads it at runtime on macOS 14+.
+      - target: HoldSpeakParakeet
+        link: false
+        embed: true
     info:
       path: Resources/Info.plist
       properties:
@@ -82,3 +91,25 @@ targets:
         MARKETING_VERSION: "0.4.2"
         CURRENT_PROJECT_VERSION: "1"
         GENERATE_INFOPLIST_FILE: NO
+
+  # Parakeet engine (FluidAudio). FluidAudio needs macOS 14 and Swift won't import a
+  # module built for a newer macOS than the importer, so this framework is built for 14,
+  # embedded in the app and loaded at runtime (ParakeetTranscriber.swift) — the app
+  # itself keeps supporting macOS 13.
+  HoldSpeakParakeet:
+    type: framework
+    platform: macOS
+    deploymentTarget: "14.0"
+    sources:
+      - path: Sources/Parakeet
+      - path: Sources/ParakeetShared
+    dependencies:
+      - package: FluidAudio
+        product: FluidAudio
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.timmal.push-to-talk.parakeet
+        MACOSX_DEPLOYMENT_TARGET: "14.0"
+        GENERATE_INFOPLIST_FILE: YES
+        SKIP_INSTALL: YES
+        DEFINES_MODULE: NO

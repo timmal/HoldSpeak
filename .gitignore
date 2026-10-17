@@ -13,3 +13,7 @@ docs/superpowers/
 
 # Local agent instructions
 CLAUDE.md
+
+# asr-compare harness (scripts/asr-compare)
+scripts/asr-compare/.cache/
+scripts/asr-compare/results/

@@ -83,16 +83,19 @@ public enum WhisperModelID: String, CaseIterable, Identifiable {
 }
 
 public enum TranscriptionEngineKind: String {
-    case whisper, gemini, openai
+    case whisper, gemini, openai, parakeet
 
-    /// nil for the local Whisper engine.
+    /// nil for the local engines (Whisper, Parakeet).
     public var cloudProvider: CloudProvider? {
         switch self {
-        case .whisper: return nil
+        case .whisper, .parakeet: return nil
         case .gemini:  return .gemini
         case .openai:  return .openai
         }
     }
+
+    /// Runs on this Mac.
+    public var isLocal: Bool { cloudProvider == nil }
 }
 
 extension CloudProvider {
@@ -104,25 +107,37 @@ extension CloudProvider {
     }
 }
 
-/// One entry of the combined "Model" dropdown: a local Whisper model or a cloud model.
+/// One entry of the combined "Model" dropdown: a local model (Whisper, Parakeet) or a cloud model.
 public enum ModelChoice: Hashable, Identifiable {
     case whisper(WhisperModelID)
+    case parakeet(ParakeetModelID)
     case gemini(GeminiModelID)
     case openai(OpenAIModelID)
 
     public var id: String {
         switch self {
-        case .whisper(let m): return m.rawValue
-        case .gemini(let m):  return m.rawValue
-        case .openai(let m):  return m.rawValue
+        case .whisper(let m):  return m.rawValue
+        case .parakeet(let m): return m.rawValue
+        case .gemini(let m):   return m.rawValue
+        case .openai(let m):   return m.rawValue
         }
     }
     /// Shown in the closed dropdown; the open menu lists the full model labels.
     public var label: String {
         switch self {
-        case .whisper(let m): return "Whisper \(m.shortLabel)"
-        case .gemini(let m):  return "Gemini \(m.shortLabel)"
-        case .openai(let m):  return "OpenAI \(m.shortLabel)"
+        case .whisper(let m):  return "Whisper \(m.shortLabel)"
+        case .parakeet(let m): return "Parakeet \(m.shortLabel)"
+        case .gemini(let m):   return "Gemini \(m.shortLabel)"
+        case .openai(let m):   return "OpenAI \(m.shortLabel)"
+        }
+    }
+
+    /// nil for cloud models.
+    public var local: LocalModel? {
+        switch self {
+        case .whisper(let m):  return .whisper(m)
+        case .parakeet(let m): return .parakeet(m)
+        case .gemini, .openai: return nil
         }
     }
 }
@@ -132,6 +147,9 @@ public final class PreferencesStore: ObservableObject {
     @AppStorage("holdThresholdMs") public var holdThresholdMs: Int = 150
     @AppStorage("hudPosition")     public var hudPosition: HUDPosition = .bottomCenter
     @AppStorage("modelID")         public var modelID: WhisperModelID = .turbo
+    @AppStorage("parakeetModel")   public var parakeetModel: ParakeetModelID = .ultra
+    /// The local engine picked last (whisper or parakeet): cloud engines fall back to it.
+    @AppStorage("localEngine")     private var localEngineRaw: String = TranscriptionEngineKind.whisper.rawValue
     @AppStorage("geminiModel")     public var geminiModel: GeminiModelID = .transcribe
     @AppStorage("openAIModel")     public var openAIModel: OpenAIModelID = .transcribe
     /// Empty until the user picks an engine in onboarding.
@@ -142,9 +160,9 @@ public final class PreferencesStore: ObservableObject {
     @AppStorage("autoPunctuation") public var autoPunctuation: Bool = true
     @AppStorage("autoCapitalize")  public var autoCapitalize: Bool = true
     @AppStorage("removeFillers")   public var removeFillers: Bool = false
-    /// When the selected cloud engine fails: try the other cloud engines with a key, then Whisper.
+    /// When the selected cloud engine fails: try the other cloud engines with a key, then the local model.
     @AppStorage("engineFallback")  public var engineFallback: Bool = false
-    /// Whisper and OpenAI; Gemini drops fillers by context instead of a list.
+    /// Whisper, Parakeet and OpenAI; Gemini drops fillers by context instead of a list.
     @AppStorage("fillerWords")     public var fillerWords: String = TextCleaner.defaultFillers
     @AppStorage("metricsResetAtMs") public var metricsResetAtMs: Int = 0
     @AppStorage("inputDevice")     private var inputDeviceRaw: String = InputSelection.avoidBluetooth.rawValue
@@ -155,25 +173,37 @@ public final class PreferencesStore: ObservableObject {
     }
 
     public var engine: TranscriptionEngineKind {
-        get { TranscriptionEngineKind(rawValue: engineRaw) ?? .whisper }
-        set { objectWillChange.send(); engineRaw = newValue.rawValue }
+        get { LocalModel.supported(TranscriptionEngineKind(rawValue: engineRaw) ?? .whisper) }
+        set {
+            objectWillChange.send()
+            engineRaw = newValue.rawValue
+            if newValue.isLocal { localEngineRaw = newValue.rawValue }
+        }
     }
 
     public var engineChosen: Bool { !engineRaw.isEmpty }
 
+    /// The selected local model, or with a cloud engine the local model it falls back to.
+    public var localModel: LocalModel {
+        LocalModel.resolve(engine: engine, lastLocal: TranscriptionEngineKind(rawValue: localEngineRaw),
+                           whisper: modelID, parakeet: parakeetModel)
+    }
+
     public var modelChoice: ModelChoice {
         get {
             switch engine {
-            case .whisper: return .whisper(modelID)
-            case .gemini:  return .gemini(geminiModel)
-            case .openai:  return .openai(openAIModel)
+            case .whisper:  return .whisper(modelID)
+            case .parakeet: return .parakeet(parakeetModel)
+            case .gemini:   return .gemini(geminiModel)
+            case .openai:   return .openai(openAIModel)
             }
         }
         set {
             switch newValue {
-            case .whisper(let m): modelID = m; engine = .whisper
-            case .gemini(let m):  geminiModel = m; engine = .gemini
-            case .openai(let m):  openAIModel = m; engine = .openai
+            case .whisper(let m):  modelID = m; engine = .whisper
+            case .parakeet(let m): parakeetModel = m; engine = .parakeet
+            case .gemini(let m):   geminiModel = m; engine = .gemini
+            case .openai(let m):   openAIModel = m; engine = .openai
             }
         }
     }

@@ -21,7 +21,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var cancellables = Set<AnyCancellable>()
     /// Last values acted on, so unrelated defaults writes don't re-trigger them.
     private var appliedPrimaryLanguage: PrimaryLanguage?
-    private var appliedModelID: WhisperModelID?
+    private var appliedLocalModel: LocalModel?
     private var appliedEngine: TranscriptionEngineKind?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -53,18 +53,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             guard let self, !self.modelsVM.downloading else { return }
             Task { await self.modelsVM.download(id) }
         }
-        modelsVM.onDownloaded = { [weak self] id in
+        modelsVM.onDownloaded = { [weak self] model in
             let prefs = PreferencesStore.shared
-            guard prefs.engine == .whisper, id == prefs.modelID else { return }
-            self?.loadModel(id)
+            guard prefs.engine.isLocal, model == prefs.localModel else { return }
+            self?.loadModel(model)
         }
         modelsVM.onDeleted = { [weak self] in
             guard let self else { return }
-            self.engine.unloadWhisper()
+            self.engine.unloadLocal()
             // The selected model may still be found in another app's folder.
             let prefs = PreferencesStore.shared
-            if prefs.engine == .whisper, ModelManager.shared.locateModel(prefs.modelID) != nil {
-                self.loadModel(prefs.modelID)
+            if prefs.engine.isLocal, ModelManager.shared.locate(prefs.localModel) != nil {
+                self.loadModel(prefs.localModel)
             }
         }
         popoverVM = PopoverViewModel(store: store, metricsEngine: metrics)
@@ -86,12 +86,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if !prefs.engineChosen, ModelManager.shared.hasManagedModels() {
             prefs.engine = .whisper
         }
-        appliedModelID = prefs.modelID
+        appliedLocalModel = prefs.localModel
         appliedEngine = prefs.engineChosen ? prefs.engine : nil
         // A fresh install loads nothing until onboarding picks an engine; the cloud engines
-        // never needs the ~800 MB Whisper model in memory.
-        if prefs.engineChosen, prefs.engine == .whisper {
-            loadModel(prefs.modelID)
+        // never need a local model in memory (~800 MB for Whisper Turbo).
+        if prefs.engineChosen, prefs.engine.isLocal {
+            loadModel(prefs.localModel)
         }
 
         NotificationCenter.default.addObserver(forName: .openPreferences, object: nil, queue: .main) { [weak self] note in
@@ -135,14 +135,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let prefs = PreferencesStore.shared
         prefs.engine = kind
         appliedEngine = kind
-        appliedModelID = prefs.modelID
+        appliedLocalModel = prefs.localModel
         pttLog("Engine chosen in onboarding: \(kind.rawValue)")
-        guard kind == .whisper else { return }
-        if ModelManager.shared.locateModel(prefs.modelID) != nil {
-            loadModel(prefs.modelID)
+        guard kind.isLocal else { return }
+        if ModelManager.shared.locate(prefs.localModel) != nil {
+            loadModel(prefs.localModel)
         } else {
             // Shows progress in onboarding; onDownloaded loads it.
-            Task { await modelsVM.download(prefs.modelID) }
+            Task { await modelsVM.download(prefs.localModel) }
         }
     }
 
@@ -168,12 +168,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         HUDPillView()
     }
 
-    private func loadModel(_ modelID: WhisperModelID) {
+    private func loadModel(_ model: LocalModel) {
         Task {
-            pttLog("Preloading model: \(modelID.rawValue)")
+            pttLog("Preloading model: \(model.shortLabel)")
             do {
-                try await engine.preload(model: modelID)
-                pttLog("Model loaded OK: \(modelID.rawValue)")
+                try await engine.preload(model)
+                pttLog("Model loaded OK: \(model.shortLabel)")
             } catch {
                 pttLog("Model preload FAILED: \(error)")
             }
@@ -190,16 +190,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if engineChanged {
             appliedEngine = prefs.engine
             pttLog("Engine switched to \(prefs.engine.rawValue)")
-            if prefs.engine != .whisper { engine.unloadWhisper() }
+            if !prefs.engine.isLocal { engine.unloadLocal() }
         }
-        guard prefs.engine == .whisper else { return }
-        if engineChanged || prefs.modelID != appliedModelID {
-            appliedModelID = prefs.modelID
+        guard prefs.engine.isLocal else { return }
+        let model = prefs.localModel
+        if engineChanged || model != appliedLocalModel {
+            appliedLocalModel = model
             // A model that isn't on disk yet loads once "Download selected model" finishes.
-            if ModelManager.shared.locateModel(prefs.modelID) != nil {
-                loadModel(prefs.modelID)
+            if ModelManager.shared.locate(model) != nil {
+                loadModel(model)
             } else {
-                pttLog("Model \(prefs.modelID.rawValue) selected but not downloaded — waiting for download")
+                // The other local engine's model is no use now.
+                engine.unloadLocal(except: model.engineKind)
+                pttLog("Model \(model.shortLabel) selected but not downloaded — waiting for download")
             }
         }
     }

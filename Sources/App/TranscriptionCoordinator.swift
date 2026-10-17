@@ -68,6 +68,7 @@ final class TranscriptionCoordinator {
             autoPunctuation: prefs.autoPunctuation,
             autoCapitalize: prefs.autoCapitalize,
             // By the engine that answered, which may be a fallback rather than the selected one.
+            // The list is Whisper's own subtitle boilerplate; Parakeet doesn't produce it.
             dropHallucinations: result.engine == .whisper,
             // Gemini is asked to drop fillers by context; the others get the list.
             fillers: prefs.removeFillers && result.engine != .gemini
