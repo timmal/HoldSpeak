@@ -1,0 +1,7 @@
+# id	voice	reference text (what `say` reads)
+ru-short	Milena	Привет! Сегодня я закончил задачу и отправил её на проверку.
+ru-long	Milena	Вчера вечером мы обсуждали план на следующую неделю. Нужно обновить документацию, исправить две ошибки в настройках и подготовить короткую презентацию для команды. Если успеем, в пятницу выпустим новую версию приложения и соберём отзывы пользователей. А в понедельник начнём работу над мобильной версией.
+en-short	Samantha	Please schedule the review meeting for tomorrow morning at ten o'clock.
+en-long	Samantha	Yesterday we went through the release checklist together. The build passed on every machine, but the installer still asks for the password twice. Before Friday we need to fix that, update the screenshots on the website, and write a short note for the users about the new settings. After that, we can finally start planning the next version.
+mixed-short	Milena	Сделай pull request, и после ревью запустим деплой в Kubernetes.
+mixed-long	Milena	Я открыл pull request с исправлением, ревьюер оставил пару комментариев. После мержа в main запускаем деплой через GitHub Actions в Kubernetes кластер, потом проверяем логи в Grafana и, если что-то пошло не так, делаем rollback на прошлый релиз. Хотфикс пушим отдельной веткой.
