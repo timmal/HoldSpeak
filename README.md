@@ -42,7 +42,7 @@ On first launch, choose how speech is recognized — **Whisper** (on this Mac, d
 The onboarding window has Open… and Re-check buttons.
 
 <p align="center">
-  <img src="docs/screenshots/onboarding.webp?v=4" width="480" alt="Onboarding · choose Whisper or Gemini" />
+  <img src="docs/screenshots/onboarding.webp?v=5" width="480" alt="Onboarding · choose OpenAI Whisper Turbo, Gemini or OpenAI" />
 </p>
 
 ### Updating
@@ -62,6 +62,10 @@ Preferences → Audio → **Model** lists the models in two groups, best first i
 - **On this Mac — free, works offline:** **NVIDIA Parakeet Ultra** (fastest, 25 European languages, 610 MB; macOS 14+ on Apple Silicon, hidden elsewhere) and **OpenAI Whisper Turbo** (large-v3 distilled, 99 languages, slower, 1.5 GB — the default).
 - **Cloud — your API key, pay per use:** **OpenAI GPT Transcribe**, **OpenAI GPT-4o mini**, **Gemini 3.5 Transcribe**, **Gemini 3.5 Flash-Lite** — see below. Each item shows its price per hour of speech.
 
+<p align="center">
+  <img src="docs/screenshots/preferences-models.webp?v=1" width="560" alt="Preferences · Audio · Model list" />
+</p>
+
 If you already have MacWhisper / another WhisperKit client installed, their models will be picked up automatically. Otherwise the first model is downloaded to `~/Library/Application Support/HoldSpeak/Models/`.
 
 To free disk space, Preferences → Audio → **Downloaded models → Delete…** removes every model HoldSpeak downloaded. Models that belong to MacWhisper or other apps are left alone.
@@ -75,7 +79,7 @@ Pick a Gemini model in Preferences → Audio → **Model** (or choose Gemini dur
 3. Paste the key in HoldSpeak and click **Save**. The key is checked with Google and stored in the macOS Keychain, never in preferences files; it survives app updates. After each update macOS asks once to let the new version read the key — enter your Mac password and click **Always Allow** (HoldSpeak is self-signed, so the Keychain sees every new build as a new app).
 
 <p align="center">
-  <img src="docs/screenshots/preferences-audio-gemini.webp?v=5" width="560" alt="Preferences · Audio with Gemini selected" />
+  <img src="docs/screenshots/preferences-audio-gemini.webp?v=6" width="560" alt="Preferences · Audio with Gemini selected" />
 </p>
 
 Models:
@@ -147,7 +151,7 @@ By default, presses shorter than **150 ms** don't start recording — the key be
 <p align="center">
   <img src="docs/screenshots/preferences-general.webp?v=4" width="560" alt="Preferences · General" />
   <br /><br />
-  <img src="docs/screenshots/preferences-audio.webp?v=5" width="560" alt="Preferences · Audio" />
+  <img src="docs/screenshots/preferences-audio.webp?v=6" width="560" alt="Preferences · Audio with NVIDIA Parakeet Ultra" />
 </p>
 
 ### Filler words
