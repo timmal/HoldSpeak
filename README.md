@@ -29,6 +29,8 @@ A free, local alternative to paid Whisper wrappers. Built for one reason: talkin
 
 ## Install
 
+Requires a Mac with Apple Silicon (M1 or later) and macOS 13 or later.
+
 Grab the latest DMG from the [Releases page](https://github.com/timmal/HoldSpeak/releases/latest), open it, and drag `HoldSpeak.app` into `Applications`.
 
 Because the app is self-signed, macOS will block the first launch. Open **System Settings → Privacy & Security**, scroll to the message *"HoldSpeak was blocked…"* and click **Open Anyway**. Confirm with Touch ID / password. After that it launches normally from Launchpad / Applications. The app runs as a menu bar extra — look for the radio icon in the right side of your menu bar; it won't appear in the Dock or Cmd-Tab.
