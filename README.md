@@ -33,7 +33,7 @@ Grab the latest DMG from the [Releases page](https://github.com/timmal/HoldSpeak
 
 Because the app is self-signed, macOS will block the first launch. Open **System Settings → Privacy & Security**, scroll to the message *"HoldSpeak was blocked…"* and click **Open Anyway**. Confirm with Touch ID / password. After that it launches normally from Launchpad / Applications. The app runs as a menu bar extra — look for the radio icon in the right side of your menu bar; it won't appear in the Dock or Cmd-Tab.
 
-On first launch, choose how speech is recognized — **Whisper** (on this Mac, downloads a model), **Gemini** (Google cloud) or **OpenAI** (cloud); the cloud engines ask for your API key — then grant three permissions:
+On first launch, choose how speech is recognized — **NVIDIA Parakeet Ultra** (on this Mac, fastest, 25 European languages, ~610 MB download; macOS 14+ on Apple Silicon), **OpenAI Whisper Turbo** (on this Mac, 99 languages, slower, ~1.5 GB), **Gemini** (Google cloud) or **OpenAI** (cloud); the cloud engines ask for your API key — then grant three permissions:
 
 - **Microphone** — for audio capture
 - **Accessibility** — for the global hotkey and text insertion
@@ -42,7 +42,7 @@ On first launch, choose how speech is recognized — **Whisper** (on this Mac, d
 The onboarding window has Open… and Re-check buttons.
 
 <p align="center">
-  <img src="docs/screenshots/onboarding.webp?v=5" width="480" alt="Onboarding · choose OpenAI Whisper Turbo, Gemini or OpenAI" />
+  <img src="docs/screenshots/onboarding.webp?v=6" width="480" alt="Onboarding · choose NVIDIA Parakeet Ultra, OpenAI Whisper Turbo, Gemini or OpenAI" />
 </p>
 
 ### Updating

@@ -5,7 +5,8 @@ struct OnboardingView: View {
     @ObservedObject private var prefs = PreferencesStore.shared
     @State private var perms = PermissionsManager.shared.current()
     @State private var step: Step
-    @State private var choice: TranscriptionEngineKind = .whisper
+    /// Parakeet first where it runs (macOS 14 on Apple Silicon), like the Model dropdown.
+    @State private var choice: TranscriptionEngineKind = ParakeetSupport.isAvailable ? .parakeet : .whisper
     /// Called when the user confirms an engine (a cloud engine's key is already saved by then).
     var onEngineChosen: (TranscriptionEngineKind) -> Void
     var onDone: () -> Void
@@ -30,7 +31,7 @@ struct OnboardingView: View {
             }
         }
         .padding(20)
-        .frame(width: 480, height: 520)
+        .frame(width: 480, height: 620)
     }
 
     // MARK: - Engine
@@ -39,9 +40,15 @@ struct OnboardingView: View {
         VStack(alignment: .leading, spacing: 14) {
             Text("How should HoldSpeak recognize speech?")
                 .font(.title2).bold()
+            // Best first, in the Model dropdown's order; Parakeet is hidden where it can't run.
+            if ParakeetSupport.isAvailable {
+                engineCard(.parakeet,
+                           title: "\(prefs.parakeetModel.shortLabel) — on this Mac",
+                           detail: "Fastest. 25 European languages, detected on its own. Free and private, works offline. Downloads a \(prefs.parakeetModel.downloadSize) model now.")
+            }
             engineCard(.whisper,
                        title: "\(prefs.modelID.shortLabel) — on this Mac",
-                       detail: "Free and private, works offline. Downloads a \(prefs.modelID.downloadSize) model now.")
+                       detail: "99 languages, slower. Free and private, works offline. Downloads a \(prefs.modelID.downloadSize) model now.")
             engineCard(.gemini,
                        title: "Gemini — Google cloud",
                        detail: "Usually more accurate with mixed languages and jargon. Needs your own Google AI Studio API key with billing.")
@@ -134,7 +141,7 @@ struct OnboardingView: View {
             Spacer(minLength: 0)
             if modelsVM.downloading {
                 HStack(spacing: 10) {
-                    Text("Downloading \(prefs.modelID.shortLabel)…")
+                    Text("Downloading \(prefs.localModel.shortLabel)…")
                         .font(.caption)
                         .foregroundColor(.secondary)
                     ProgressView(value: modelsVM.progress)
