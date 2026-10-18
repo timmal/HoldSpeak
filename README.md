@@ -6,7 +6,7 @@
 
 **Website: [holdspeak.app](https://holdspeak.app/)** · [Download](https://github.com/timmal/HoldSpeak/releases/latest) · [Free Superwhisper alternative — comparison](https://holdspeak.app/superwhisper-alternative.html)
 
-Local push-to-talk dictation for macOS. HoldSpeak is a **menu bar app** (no Dock icon, no windows in the way) — it lives in the status bar and stays out of your workflow until you hold the hotkey. Speak, release — recognized text is inserted into the focused input. Local by default: Whisper runs on GPU via WhisperKit. Optionally, you can switch to Google Gemini or OpenAI with your own API key.
+Local push-to-talk dictation for macOS. HoldSpeak is a **menu bar app** (no Dock icon, no windows in the way) — it lives in the status bar and stays out of your workflow until you hold the hotkey. Speak, release — recognized text is inserted into the focused input. Local by default: NVIDIA Parakeet Ultra (macOS 14+) or OpenAI Whisper Turbo (via WhisperKit) runs on this Mac. Optionally, you can switch to Google Gemini or OpenAI with your own API key.
 
 <p align="center">
   <img src="docs/screenshots/popover.webp?v=5" width="360" alt="Menu bar popover" />
@@ -44,7 +44,7 @@ On first launch, choose how speech is recognized — **NVIDIA Parakeet Ultra** (
 The onboarding window has Open… and Re-check buttons.
 
 <p align="center">
-  <img src="docs/screenshots/onboarding.webp?v=6" width="480" alt="Onboarding · choose NVIDIA Parakeet Ultra, OpenAI Whisper Turbo, Gemini or OpenAI" />
+  <img src="docs/screenshots/onboarding.webp?v=7" width="480" alt="Onboarding · choose NVIDIA Parakeet Ultra, OpenAI Whisper Turbo, Gemini or OpenAI" />
 </p>
 
 ### Updating
@@ -61,7 +61,7 @@ Your preferences, history, and downloaded models live in `~/Library/Application 
 
 Preferences → Audio → **Model** lists the models in two groups, best first in each:
 
-- **On this Mac — free, works offline:** **NVIDIA Parakeet Ultra** (fastest, 25 European languages, 610 MB; macOS 14+ on Apple Silicon, hidden elsewhere) and **OpenAI Whisper Turbo** (large-v3 distilled, 99 languages, slower, 1.5 GB — the default).
+- **On this Mac — free, works offline:** **NVIDIA Parakeet Ultra** (fastest, 25 European languages, 610 MB; the default on macOS 14+, hidden on macOS 13) and **OpenAI Whisper Turbo** (large-v3 distilled, 99 languages, slower, 1.5 GB — the default on macOS 13).
 - **Cloud — your API key, pay per use:** **OpenAI GPT Transcribe**, **OpenAI GPT-4o mini**, **Gemini 3.5 Transcribe**, **Gemini 3.5 Flash-Lite** — see below. Each item shows its price per hour of speech.
 
 <p align="center">
@@ -118,15 +118,15 @@ With a cloud engine selected, Preferences → Audio → **Fallback: Try other en
 
 Whisper isn't kept in memory while a cloud engine is selected: the first fallback loads the model (a few extra seconds), then it stays loaded. If the model isn't downloaded yet, the first fallback starts the download and that dictation is lost; without internet it can't be downloaded at all, so download it in advance (the checkbox offers a button).
 
-Privacy: with Gemini or OpenAI, each dictation's audio is sent to Google or OpenAI respectively. Whisper stays the default and never sends anything anywhere. Text cleanup, the "Add period" / "Capitalize" / "Remove filler words" options and the terminology dictionary apply to every engine; the cloud engines also receive your dictionary's terms as spelling hints.
+Privacy: with Gemini or OpenAI, each dictation's audio is sent to Google or OpenAI respectively. The local models (NVIDIA Parakeet Ultra, OpenAI Whisper Turbo) stay the default and never send anything anywhere. Text cleanup, the "Add period" / "Capitalize" / "Remove filler words" options and the terminology dictionary apply to every engine; the cloud engines also receive your dictionary's terms as spelling hints.
 
 ### Reducing insertion latency
 
 The delay between releasing the hotkey and text appearing in the input is dominated by the Whisper forward pass. Two levers:
 
 - **Pick a faster model.** Preferences → Audio → *Model*:
-  - **NVIDIA Parakeet Ultra (610 MB)** — fastest local option (well under a second even for long dictations); detects the language itself. macOS 14+ on Apple Silicon.
-  - **OpenAI Whisper Turbo (1.5 GB)** — default; 99 languages, but takes a couple of seconds per utterance.
+  - **NVIDIA Parakeet Ultra (610 MB)** — fastest local option (well under a second even for long dictations); detects the language itself. Default on macOS 14+ (Apple Silicon).
+  - **OpenAI Whisper Turbo (1.5 GB)** — default on macOS 13; 99 languages, but takes a couple of seconds per utterance.
 - **Set a fixed language** instead of Auto (Whisper). Preferences → Audio → *Primary language*: picking Russian or English skips an extra language-detection forward pass that Auto mode runs before transcription.
 
 Whisper Tiny and Small are no longer offered: if you had one selected, HoldSpeak switches to OpenAI Whisper Turbo. Their downloaded files stay in the models folder until you delete them with **Downloaded models → Delete…**.
