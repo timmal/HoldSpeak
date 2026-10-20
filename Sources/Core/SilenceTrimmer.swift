@@ -17,17 +17,26 @@ public struct SilenceTrimmer {
     /// This loud always counts as speech, so a clip with no pause to measure the
     /// noise floor from isn't rejected.
     public var speechLevel: Float = 0.02
-    /// Longest stretch above the speech threshold must be at least this long:
-    /// a syllable is ~100 ms or more, a key click 30–60 ms.
+    /// Longest voiced run must be at least this long: a syllable is ~100 ms or
+    /// more, a key click 30–60 ms.
     public var minVoicedRunMs: Int = 90
+    /// A voiced run starts at a window above the speech threshold and lasts while
+    /// windows stay above this fraction of it. Quiet speech crosses the threshold
+    /// only at each syllable's peak, for 30–60 ms, but holds above 0.6× of it for
+    /// 100+ ms; a key click drops straight back to the noise floor. Not 0.5: room
+    /// noise drifts to ~2.3× its floor within a clip.
+    public var holdRatio: Float = 0.6
 
     public struct Stats: CustomStringConvertible {
         public let noiseFloor: Float
         public let peak: Float
         public let voicedRunMs: Int
+        /// Every window above the speech threshold, in a run or not.
+        public let voicedMs: Int
 
         public var description: String {
-            String(format: "noise=%.4f peak=%.4f voicedRun=%dms", noiseFloor, peak, voicedRunMs)
+            String(format: "noise=%.4f peak=%.4f voicedRun=%dms voiced=%dms",
+                   noiseFloor, peak, voicedRunMs, voicedMs)
         }
     }
 
@@ -46,13 +55,23 @@ public struct SilenceTrimmer {
         let sorted = rms.sorted()
         let noise = sorted.isEmpty ? 0 : max(floor, sorted[sorted.count / 10])
         let threshold = min(noise * noiseSNR, speechLevel)
-        var run = 0, longest = 0
+        let hold = threshold * holdRatio
+        var run = 0, longest = 0, voiced = 0
+        var crossed = false     // current run has a window above `threshold`
         for r in rms {
-            run = r > threshold ? run + 1 : 0
-            longest = max(longest, run)
+            if r > threshold { voiced += 1 }
+            if r > hold {
+                run += 1
+                crossed = crossed || r > threshold
+            } else {
+                run = 0
+                crossed = false
+            }
+            if crossed { longest = max(longest, run) }
         }
         let windowMs = windowSamples / 16
-        return Stats(noiseFloor: noise, peak: sorted.last ?? 0, voicedRunMs: longest * windowMs)
+        return Stats(noiseFloor: noise, peak: sorted.last ?? 0,
+                     voicedRunMs: longest * windowMs, voicedMs: voiced * windowMs)
     }
 
     /// For logging why a buffer was kept or dropped.
