@@ -87,12 +87,12 @@ final class TranscriptionCoordinator {
             durationMs: result.durationMs,
             wordCount: cleaned.split(whereSeparator: { $0.isWhitespace }).count,
             language: result.language,
-            inserted: insertion == .inserted
+            inserted: insertion == .inserted || insertion == .pasted
         )
         _ = try? store.append(record)
 
         switch insertion {
-        case .inserted:          return .inserted
+        case .inserted, .pasted: return .inserted
         case .skippedSecureField: return .skippedSecureField
         case .noFocus:           return .noFocus
         }
