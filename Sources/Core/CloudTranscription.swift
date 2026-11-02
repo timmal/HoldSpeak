@@ -94,6 +94,10 @@ public enum TranscriptionFailure: Error, Equatable {
     /// The cloud engine failed with the wrapped error and the backup local model
     /// (`backup` is its name, `LocalModel.shortLabel`) is still downloading.
     indirect case backupDownloading(TranscriptionFailure, backup: String = WhisperModelID.turbo.shortLabel)
+    /// The whole take was exact zeros; no engine was asked.
+    case noMicSignal
+    /// Nothing was recorded: see `InputRoute.lidClosedNoMic`.
+    case lidClosedNoMic
 
     /// Both lines are shown in the HUD pill, so keep them short.
     public var title: String {
@@ -108,6 +112,8 @@ public enum TranscriptionFailure: Error, Equatable {
         case .unreachable(let p):    return "\(p.name) unreachable"
         case .serviceError(let p, let status): return "\(p.name) error (HTTP \(status))"
         case .backupDownloading(let failure, _): return failure.title
+        case .noMicSignal:           return "Microphone gave no signal"
+        case .lidClosedNoMic:        return "Lid closed · built-in mic is off"
         }
     }
 
@@ -129,6 +135,8 @@ public enum TranscriptionFailure: Error, Equatable {
         case .unreachable:          return "Check your internet connection"
         case .serviceError:         return "Try again in a moment"
         case .backupDownloading(_, let backup): return "Downloading \(backup) as a backup…"
+        case .noMicSignal:          return "Check the input in Preferences → Audio"
+        case .lidClosedNoMic:       return "Connect a wired mic"
         }
     }
 

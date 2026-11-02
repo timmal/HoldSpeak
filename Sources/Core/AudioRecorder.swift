@@ -7,6 +7,8 @@ public enum AudioRecorderError: Error {
     case invalidInputFormat(sampleRate: Double, channels: UInt32)
     /// No input device is connected.
     case noInputDevice
+    /// The lid disconnected the built-in mic and no wired mic is connected.
+    case lidClosedNoMic
     /// A CoreAudio call returned an error.
     case coreAudio(operation: String, status: OSStatus)
     /// A CoreAudio call did not return within the watchdog timeout.
@@ -203,9 +205,7 @@ private final class Capture {
     func start(input: InputSelection) throws {
         guard !abandoned, !isRecording else { return }
         self.input = input
-        guard let device = InputDevice.resolve(input) ?? InputDevice.defaultID() else {
-            throw AudioRecorderError.noInputDevice
-        }
+        let device = try routedDevice()
         if device != tap?.device { dropTap() }
         unmuteIfNeeded(device)
         do {
@@ -219,6 +219,28 @@ private final class Capture {
     func stop() {
         teardown()
         restoreMute()
+    }
+
+    /// Picks the device for the current selection and lid state, and logs the decision.
+    private func routedDevice() throws -> AudioDeviceID {
+        let lidClosed = InputDevice.isLidClosed()
+        let defaultID = InputDevice.defaultID()
+        let devices = InputDevice.inputDevices()
+        let route = InputRouter.route(selection: input, devices: devices, defaultID: defaultID, lidClosed: lidClosed)
+        let chosen: String
+        switch route {
+        case .selected(let id):   chosen = "\"\(devices.first { $0.id == id }?.name ?? "\(id)")\""
+        case .lidFallback(let d): chosen = "\"\(d.name)\" (replaces built-in mic)"
+        case .lidClosedNoMic:     chosen = "none (built-in mic is off, no wired mic)"
+        case .noDevice:           chosen = "none (no input device)"
+        }
+        pttLog("AudioRecorder route: lid=\(lidClosed ? "closed" : "open") selection=\(input.rawValue) → \(chosen)")
+        switch route {
+        case .selected(let id):   return id
+        case .lidFallback(let d): return d.id
+        case .lidClosedNoMic:     throw AudioRecorderError.lidClosedNoMic
+        case .noDevice:           throw AudioRecorderError.noInputDevice
+        }
     }
 
     // MARK: - Input unit
@@ -386,10 +408,7 @@ private final class Capture {
         dropTap()
         guard wasRecording else { return }
         do {
-            guard let device = InputDevice.resolve(input) ?? InputDevice.defaultID() else {
-                throw AudioRecorderError.noInputDevice
-            }
-            try startTap(device: device)
+            try startTap(device: routedDevice())
             pttLog("AudioRecorder: capture resumed after device change")
         } catch {
             pttLog("AudioRecorder: resume after device change failed: \(error)")

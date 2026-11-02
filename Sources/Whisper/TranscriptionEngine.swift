@@ -66,7 +66,7 @@ public final class TranscriptionEngine {
         let rawMs = Int(Double(samples.count) / 16.0)
         guard let trimmed = vad.trimSilence(samples) else {
             pttLog("finalize: VAD dropped buffer (raw=\(rawMs)ms \(vad.stats(samples)))")
-            return .empty
+            return SilenceTrimmer.hasNoSignal(samples) ? .failed(.noMicSignal) : .empty
         }
         let durationMs = Int(Double(trimmed.count) / 16.0)
         pttLog("finalize: VAD raw=\(rawMs)ms → trimmed=\(durationMs)ms \(vad.stats(samples))")

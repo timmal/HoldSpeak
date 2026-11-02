@@ -28,6 +28,35 @@ final class SilenceTrimmerTests: XCTestCase {
         zip(a, b).map { $0 + $1 }
     }
 
+    // MARK: - No signal at all
+
+    func testExactZeroTakeOfRealLengthHasNoSignal() {
+        XCTAssertTrue(SilenceTrimmer.hasNoSignal(silence(ms: 1461)))
+        XCTAssertTrue(SilenceTrimmer.hasNoSignal(silence(ms: SilenceTrimmer.noSignalMinMs)))
+        XCTAssertTrue(SilenceTrimmer.hasNoSignal([Float](repeating: -0.0, count: 16_000)))
+    }
+
+    func testShortZeroTakeIsNotNoSignal() {
+        // A mic can hand over zeros for its first moments, so a short hold proves nothing.
+        XCTAssertFalse(SilenceTrimmer.hasNoSignal(silence(ms: SilenceTrimmer.noSignalMinMs - 1)))
+        XCTAssertFalse(SilenceTrimmer.hasNoSignal([]))
+    }
+
+    func testAnyNonZeroSampleIsASignal() {
+        var almost = silence(ms: 1500)
+        almost[almost.count - 1] = 1e-7
+        XCTAssertFalse(SilenceTrimmer.hasNoSignal(almost))
+    }
+
+    func testOrdinaryQuietClipsAreNotNoSignal() {
+        // Room noise far below anything the VAD keeps: still a live mic.
+        let quiet = noise(ms: 1500, amplitude: 0.0001)
+        XCTAssertNil(vad.trimSilence(quiet))
+        XCTAssertFalse(SilenceTrimmer.hasNoSignal(quiet))
+        XCTAssertFalse(SilenceTrimmer.hasNoSignal(noise(ms: 1500, amplitude: 0.007)))
+    }
+
+
     /// Quiet speech on the built-in mic at a low input volume: syllables at 4.5 Hz
     /// (sin² envelope) on a 140 Hz voiced carrier, loudness jittered ±35% every
     /// 20 ms. Each syllable's 30-ms RMS crosses the speech threshold for only

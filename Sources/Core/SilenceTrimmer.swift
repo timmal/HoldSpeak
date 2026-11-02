@@ -79,6 +79,15 @@ public struct SilenceTrimmer {
         stats(windows: windowRMS(samples))
     }
 
+    /// Shorter takes prove nothing: a mic can hand over zeros for its first moments.
+    public static let noSignalMinMs = 500
+
+    /// A take of real length holding only exact zeros: the mic is disconnected or muted.
+    /// Any live mic has at least some noise, however quiet the room.
+    public static func hasNoSignal(_ samples: [Float]) -> Bool {
+        samples.count >= noSignalMinMs * 16 && samples.allSatisfy { $0 == 0 }
+    }
+
     /// Trim leading/trailing silence from the buffer and return `nil` if the result
     /// is too short or the input holds no speech.
     public func trimSilence(_ samples: [Float]) -> [Float]? {

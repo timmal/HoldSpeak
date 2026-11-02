@@ -38,9 +38,17 @@ final class OverlayWindow {
     func flash(_ content: AnyView, anchor menuBarIconFrame: CGRect?, seconds: Double) {
         update(content)
         present(anchor: menuBarIconFrame)
-        let hide = DispatchWorkItem { [weak self] in self?.hide() }
+        let hide = DispatchWorkItem { [weak self] in
+            self?.flashHide = nil
+            self?.hide()
+        }
         flashHide = hide
         DispatchQueue.main.asyncAfter(deadline: .now() + seconds, execute: hide)
+    }
+
+    /// The hold ended. A message that replaced the pill stays up for its full time.
+    func hidePill() {
+        if flashHide == nil { hide() }
     }
 
     private func present(anchor: CGRect?) {

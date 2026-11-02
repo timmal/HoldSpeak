@@ -168,6 +168,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         HUDPillView()
     }
 
+    private func showFailure(_ failure: TranscriptionFailure) {
+        overlay.flash(AnyView(HUDMessageView(title: failure.title, detail: failure.body)),
+                      anchor: menu.statusItemFrame,
+                      seconds: failure.displaySeconds)
+    }
+
     private func loadModel(_ model: LocalModel) {
         Task {
             pttLog("Preloading model: \(model.shortLabel)")
@@ -245,13 +251,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             .sink { [weak self] error in
                 pttLog("Recorder failure: \(error)")
                 guard let self else { return }
+                if case AudioRecorderError.lidClosedNoMic = error {
+                    self.showFailure(.lidClosedNoMic)
+                    return
+                }
                 self.overlay.hide()
                 if case AudioRecorderError.stalled = error {
                     self.notify("Microphone not responding", "Audio was reset — try again.")
                 }
             }
             .store(in: &cancellables)
-
     }
 
     private func startRecording() {
@@ -266,12 +275,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         recorder.stop { [weak self] in
             _ = self?.engine.takeSamples() // discard the tap's audio
         }
-        overlay.hide()
+        overlay.hidePill()
     }
 
     private func endRecording() {
         pttLog("endRecording")
-        overlay.hide()
+        overlay.hidePill()
         recorder.stop { [weak self] in
             guard let self else { return }
             // Take the samples now, synchronously: the next recording's chunks can
@@ -288,9 +297,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 case .inserted:
                     break
                 case .failed(let failure):
-                    self.overlay.flash(AnyView(HUDMessageView(title: failure.title, detail: failure.body)),
-                                       anchor: self.menu.statusItemFrame,
-                                       seconds: failure.displaySeconds)
+                    self.showFailure(failure)
                     return
                 }
                 self.popoverVM.refresh()

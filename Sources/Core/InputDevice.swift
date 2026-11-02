@@ -1,5 +1,6 @@
 import CoreAudio
 import Foundation
+import IOKit
 
 /// Which microphone HoldSpeak records from. Persisted as `rawValue`.
 public enum InputSelection: Equatable, Hashable {
@@ -57,6 +58,27 @@ public enum InputDevice {
             transport == kAudioDeviceTransportTypeContinuityCaptureWired
                 || transport == kAudioDeviceTransportTypeContinuityCaptureWireless
         }
+        /// A 3.5 mm headset mic also reports the built-in transport, but it lives outside
+        /// the lid and keeps working when it closes.
+        public var isJackMic: Bool { isBuiltIn && uid.contains("Headphone") }
+        /// The mic the lid disconnects.
+        public var isInternalMic: Bool { isBuiltIn && !isJackMic }
+        /// Can replace the built-in mic while the lid is closed. An allowlist of wired mics:
+        /// a Bluetooth mic makes headphone audio jump and drop in quality, an iPhone takes
+        /// seconds to wake, virtual devices aren't mics, an aggregate may contain the dead
+        /// built-in mic, and a device reporting no transport could be any of these.
+        public var isWiredMic: Bool {
+            if isJackMic { return true }
+            switch transport {
+            case kAudioDeviceTransportTypeUSB, kAudioDeviceTransportTypeFireWire,
+                 kAudioDeviceTransportTypeThunderbolt, kAudioDeviceTransportTypePCI,
+                 kAudioDeviceTransportTypeHDMI, kAudioDeviceTransportTypeDisplayPort,
+                 kAudioDeviceTransportTypeAVB:
+                return true
+            default:
+                return false
+            }
+        }
     }
 
     /// Devices that have at least one input stream.
@@ -86,19 +108,15 @@ public enum InputDevice {
                     transport: transport)
     }
 
-    /// The device to record from, or `nil` to let the engine use the system default.
-    public static func resolve(_ selection: InputSelection) -> AudioDeviceID? {
-        switch selection {
-        case .systemDefault:
-            return nil
-        case .avoidBluetooth:
-            guard let def = defaultID(), info(def)?.isBluetooth == true else { return nil }
-            return inputDevices().first(where: \.isBuiltIn)?.id
-        case .device(let uid):
-            if let match = inputDevices().first(where: { $0.uid == uid }) { return match.id }
-            pttLog("InputDevice: selected device \(uid) not connected — using system default")
-            return nil
-        }
+    /// Whether a laptop's lid is closed; a Mac without one has no such key. Goes through
+    /// IOKit, so like the CoreAudio calls here it must stay off the main thread.
+    public static func isLidClosed() -> Bool {
+        let root = IORegistryEntryFromPath(kIOMainPortDefault, "IOPower:/IOPowerConnection/IOPMrootDomain")
+        guard root != MACH_PORT_NULL else { return false }
+        defer { IOObjectRelease(root) }
+        let state = IORegistryEntryCreateCFProperty(root, "AppleClamshellState" as CFString, kCFAllocatorDefault, 0)?
+            .takeRetainedValue()
+        return state as? Bool ?? false
     }
 
     public static func describe(_ id: AudioDeviceID) -> String {
