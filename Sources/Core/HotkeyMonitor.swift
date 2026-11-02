@@ -18,6 +18,9 @@ public final class HotkeyMonitor {
     /// still reaches the recorder. Main thread only (the tap runs on the main run loop).
     public static var isPaused = false
 
+    /// While paused, keyDowns seen by the tap go here as (keyCode, flags); return true to swallow.
+    public static var recorderKeyDown: ((UInt16, UInt64) -> Bool)?
+
     private let prefs: PreferencesStore
     public init(prefs: PreferencesStore = .shared) { self.prefs = prefs }
 
@@ -79,6 +82,9 @@ public final class HotkeyMonitor {
                 holdStartedAt = nil
                 events.send(.cancelHold)
             }
+            if type == .keyDown, NSApp.isActive, let hook = Self.recorderKeyDown {
+                return hook(UInt16(event.getIntegerValueField(.keyboardEventKeycode)), event.flags.rawValue)
+            }
             return false
         }
         let binding = prefs.hotkey
@@ -91,9 +97,9 @@ public final class HotkeyMonitor {
         }
     }
 
-    private func handleModifier(event: CGEvent, binding: HotkeyBinding) {
+    func handleModifier(event: CGEvent, binding: HotkeyBinding) {
         let flags = event.flags.rawValue
-        let ourKeyDown = (flags & binding.deviceBit) != 0
+        let ourKeyDown = (flags & binding.deviceBit) == binding.deviceBit
         let otherGeneralMods = flags & HotkeyBinding.allGeneralMods & ~binding.mods
         if ourKeyDown && otherGeneralMods != 0 { return }
 

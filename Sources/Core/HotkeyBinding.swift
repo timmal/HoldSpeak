@@ -6,7 +6,7 @@ public enum HotkeyKind: String, Codable { case modifier, key }
 
 public struct HotkeyBinding: Codable, Equatable {
     public var kind: HotkeyKind
-    /// For `.modifier`: NX device-dependent bit (low 16 of CGEventFlags).
+    /// For `.modifier`: NX device-dependent bits (low 16 of CGEventFlags), all must be held.
     public var deviceBit: UInt64
     /// For `.key`: virtual keycode.
     public var keyCode: UInt16
@@ -16,22 +16,29 @@ public struct HotkeyBinding: Codable, Equatable {
 
     public static let allGeneralMods: UInt64 = 0x00020000 | 0x00040000 | 0x00080000 | 0x00100000
 
-    public static let rightOption  = HotkeyBinding(kind: .modifier, deviceBit: 0x40, keyCode: 0, mods: 0x00080000, label: "Right Option")
-    public static let rightCommand = HotkeyBinding(kind: .modifier, deviceBit: 0x10, keyCode: 0, mods: 0x00100000, label: "Right Command")
+    public static let rightOption  = modifier(deviceBits: 0x40)!
+    public static let rightCommand = modifier(deviceBits: 0x10)!
 
-    /// Create a `.modifier` binding from a single newly-set device bit.
-    public static func modifier(deviceBit: UInt64) -> HotkeyBinding? {
-        switch deviceBit {
-        case 0x01: return .init(kind: .modifier, deviceBit: 0x01, keyCode: 0, mods: 0x00040000, label: "Left Control")
-        case 0x02: return .init(kind: .modifier, deviceBit: 0x02, keyCode: 0, mods: 0x00020000, label: "Left Shift")
-        case 0x04: return .init(kind: .modifier, deviceBit: 0x04, keyCode: 0, mods: 0x00020000, label: "Right Shift")
-        case 0x08: return .init(kind: .modifier, deviceBit: 0x08, keyCode: 0, mods: 0x00100000, label: "Left Command")
-        case 0x10: return .rightCommand
-        case 0x20: return .init(kind: .modifier, deviceBit: 0x20, keyCode: 0, mods: 0x00080000, label: "Left Option")
-        case 0x40: return .rightOption
-        case 0x2000: return .init(kind: .modifier, deviceBit: 0x2000, keyCode: 0, mods: 0x00040000, label: "Right Control")
-        default: return nil
-        }
+    private static let modifierTable: [(bit: UInt64, mods: UInt64, name: String)] = [
+        (0x01, 0x00040000, "Left Control"),
+        (0x2000, 0x00040000, "Right Control"),
+        (0x20, 0x00080000, "Left Option"),
+        (0x40, 0x00080000, "Right Option"),
+        (0x02, 0x00020000, "Left Shift"),
+        (0x04, 0x00020000, "Right Shift"),
+        (0x08, 0x00100000, "Left Command"),
+        (0x10, 0x00100000, "Right Command"),
+    ]
+
+    /// Create a `.modifier` binding from one or more device bits that must be held together.
+    public static func modifier(deviceBits: UInt64) -> HotkeyBinding? {
+        let parts = modifierTable.filter { deviceBits & $0.bit != 0 }
+        guard !parts.isEmpty else { return nil }
+        return .init(kind: .modifier,
+                     deviceBit: parts.reduce(0) { $0 | $1.bit },
+                     keyCode: 0,
+                     mods: parts.reduce(0) { $0 | $1.mods },
+                     label: parts.map(\.name).joined(separator: " + "))
     }
 
     public static func key(keyCode: UInt16, mods: UInt64) -> HotkeyBinding {

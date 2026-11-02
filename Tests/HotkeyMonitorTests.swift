@@ -36,6 +36,27 @@ final class HotkeyMonitorTests: XCTestCase {
         XCTAssertFalse(monitor.handleKey(event: key(kVK_Space, down: false), type: .keyUp, binding: optSpace))
     }
 
+    func test_modifierCombo_binding() {
+        let b = HotkeyBinding.modifier(deviceBits: 0x21)!
+        XCTAssertEqual(b.deviceBit, 0x21)
+        XCTAssertEqual(b.mods, 0x000C0000)
+        XCTAssertEqual(b.label, "Left Control + Left Option")
+    }
+
+    func test_modifierCombo_startsOnlyWhenAllHeld() {
+        let monitor = HotkeyMonitor()
+        var events: [HotkeyMonitor.Event] = []
+        let sub = monitor.events.sink { events.append($0) }
+        defer { sub.cancel() }
+        let combo = HotkeyBinding.modifier(deviceBits: 0x21)!
+        func flags(_ raw: UInt64) -> CGEvent { key(kVK_Control, down: true, flags: CGEventFlags(rawValue: raw)) }
+
+        monitor.handleModifier(event: flags(0x00040000 | 0x01), binding: combo)
+        XCTAssertTrue(events.isEmpty)
+        monitor.handleModifier(event: flags(0x00040000 | 0x00080000 | 0x21), binding: combo)
+        XCTAssertEqual(events, [.startHold])
+    }
+
     func test_otherKeys_areIgnored() {
         let monitor = HotkeyMonitor()
         XCTAssertFalse(monitor.handleKey(event: key(kVK_ANSI_A, down: true, flags: .maskAlternate),
