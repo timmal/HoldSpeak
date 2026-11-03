@@ -186,6 +186,9 @@ public enum TextInserter {
         let source = CGEventSource(stateID: .hidSystemState)
         let down = CGEvent(keyboardEventSource: source, virtualKey: 0, keyDown: true)
         let up   = CGEvent(keyboardEventSource: source, virtualKey: 0, keyDown: false)
+        // Virtual key 0 is "A": inherited Fn from the hotkey would make it Fn+A (Show Dock).
+        down?.flags = []
+        up?.flags = []
         let utf16 = Array(text.utf16)
         utf16.withUnsafeBufferPointer { buf in
             down?.keyboardSetUnicodeString(stringLength: buf.count, unicodeString: buf.baseAddress)
