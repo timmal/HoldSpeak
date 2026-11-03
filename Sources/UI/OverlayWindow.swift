@@ -16,7 +16,9 @@ final class OverlayWindow {
                         styleMask: [.borderless, .nonactivatingPanel],
                         backing: .buffered, defer: true)
         panel.isFloatingPanel = true
-        panel.level = .statusBar
+        // Apple DTS (developer.apple.com/forums/thread/826308): .floating and .statusBar
+        // sit below full-screen content, .screenSaver stays above it.
+        panel.level = .screenSaver
         panel.backgroundColor = .clear
         panel.isOpaque = false
         panel.hasShadow = false
@@ -65,6 +67,13 @@ final class OverlayWindow {
             ctx.duration = 0.15
             panel.animator().alphaValue = 1
         }
+        // After the fade: alpha and occlusion are only meaningful once it has run.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in self?.logPresented() }
+    }
+
+    private func logPresented() {
+        let screen = NSScreen.main
+        pttLog("HUD presented: frame=\(panel.frame) level=\(panel.level.rawValue) alpha=\(panel.alphaValue) visible=\(panel.isVisible) onActiveSpace=\(panel.isOnActiveSpace) occlusionVisible=\(panel.occlusionState.contains(.visible)) mainFrame=\(screen.map { "\($0.frame)" } ?? "nil") mainVisibleFrame=\(screen.map { "\($0.visibleFrame)" } ?? "nil")")
     }
 
     func hide() {
