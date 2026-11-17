@@ -1,0 +1,65 @@
+# Builds and tests every pull request and every push to main.
+# Never signs, notarizes, tags or releases: releases are cut by the maintainer
+# with scripts/release.sh on their own machine.
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  # A new push to a PR cancels the run it supersedes; runs on main always finish.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  build:
+    name: Test Core, build app (unsigned)
+    # macOS 26 Arm64 image. The UI uses macOS 26 SDK APIs (.glassEffect,
+    # .buttonStyle(.glass)), so it needs an Xcode 26 or newer.
+    runs-on: macos-26
+    timeout-minutes: 45
+    env:
+      # Pinned Xcode from the image's list (actions/runner-images,
+      # images/macos/macos-26-arm64-Readme.md). Bump when the image drops it.
+      DEVELOPER_DIR: /Applications/Xcode_26.6.app/Contents/Developer
+      HOMEBREW_NO_AUTO_UPDATE: "1"
+      HOMEBREW_NO_INSTALL_CLEANUP: "1"
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Show Xcode and macOS SDK
+        run: |
+          xcodebuild -version
+          sdk="$(xcrun --sdk macosx --show-sdk-version)"
+          echo "macOS SDK: $sdk"
+          if [ "${sdk%%.*}" -lt 26 ]; then
+            echo "::error::macOS SDK $sdk is older than 26; the UI needs the macOS 26 SDK."
+            exit 1
+          fi
+
+      - name: Test Core (swift test)
+        run: swift test
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate Xcode project
+        run: xcodegen generate
+
+      - name: Build app (Debug, unsigned)
+        run: |
+          xcodebuild \
+            -project HoldSpeak.xcodeproj \
+            -scheme HoldSpeak \
+            -configuration Debug \
+            -derivedDataPath ./build \
+            CODE_SIGNING_ALLOWED=NO \
+            build
