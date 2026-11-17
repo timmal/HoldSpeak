@@ -1,3 +1,4 @@
+import AppKit
 import AudioToolbox
 import AVFoundation
 import Combine
@@ -37,49 +38,227 @@ public final class AudioRecorder {
     public var watchdogTimeout: TimeInterval = 10
 
     private var capture: Capture
+    private var terminationObserver: NSObjectProtocol?
 
     public init() {
         capture = Capture(amplitude: amplitude, chunks: chunks, failures: failures)
+        terminationObserver = NotificationCenter.default.addObserver(
+            forName: NSApplication.willTerminateNotification, object: nil, queue: nil
+        ) { [weak self] _ in self?.restoreMuteBeforeExit() }
+    }
+
+    deinit {
+        if let terminationObserver { NotificationCenter.default.removeObserver(terminationObserver) }
+    }
+
+    /// Quitting mid-hold must not leave a mute we lifted lifted. The HAL call runs on the
+    /// capture queue like every other; a wedged HAL gets a bounded wait, not the exit.
+    private func restoreMuteBeforeExit() {
+        let c = capture
+        let done = DispatchSemaphore(value: 0)
+        c.queue.async {
+            c.restoreMute()
+            done.signal()
+        }
+        if done.wait(timeout: .now() + 1) == .timedOut {
+            pttLog("AudioRecorder: audio queue busy at quit — device mute not restored")
+        }
     }
 
     public func start(input: InputSelection) {
         perform("start") { try $0.start(input: input) }
     }
 
-    /// `completion` runs on main once capture has stopped (or the stop stalled), after
-    /// every chunk captured so far has been delivered.
+    /// `completion` runs on main once capture has stopped (or the stop stalled, or an
+    /// earlier call on the same capture stalled and it was abandoned), after every chunk
+    /// captured so far has been delivered, and before a later `start` can deliver any.
     public func stop(completion: (() -> Void)? = nil) {
         perform("stop", completion: completion) { $0.stop() }
     }
 
-    private final class Op { var finished = false }
+    private let pending = PendingCalls()
 
     private func perform(_ label: String,
                          completion: (() -> Void)? = nil,
                          _ work: @escaping (Capture) throws -> Void) {
         let c = capture
-        let op = Op()
+        let call = pending.begin(owner: c, completion: completion)
         c.queue.async { [weak self] in
             var failure: Error?
             do { try work(c) } catch { failure = error }
             DispatchQueue.main.async {
-                guard let self, !op.finished else { return }
-                op.finished = true
+                guard let self, !call.finished else { return }
                 if let failure, self.capture === c { self.failures.send(failure) }
-                completion?()
+                self.pending.finish(call)
             }
         }
         DispatchQueue.main.asyncAfter(deadline: .now() + watchdogTimeout) { [weak self] in
-            guard let self, !op.finished else { return }
-            op.finished = true
-            if self.capture === c {
-                pttLog("AudioRecorder: \(label) stalled >\(self.watchdogTimeout)s — abandoning audio capture")
-                c.abandon()
-                self.capture = Capture(amplitude: self.amplitude, chunks: self.chunks, failures: self.failures)
-                self.failures.send(AudioRecorderError.stalled(operation: label))
+            guard let self, !call.finished else { return }
+            guard self.capture === c else {
+                self.pending.finish(call)
+                return
             }
-            completion?()
+            pttLog("AudioRecorder: \(label) stalled >\(self.watchdogTimeout)s — abandoning audio capture")
+            c.abandon()
+            self.capture = Capture(amplitude: self.amplitude, chunks: self.chunks, failures: self.failures)
+            self.failures.send(AudioRecorderError.stalled(operation: label))
+            // Calls queued behind the stalled one on `c` are finished now, in order, too:
+            // left to their own watchdogs, a stop's completion would run `takeSamples()`
+            // in the middle of the next recording, which only starts after this returns.
+            self.pending.finishAll(owner: c)
         }
+    }
+}
+
+/// Main-thread bookkeeping of start/stop calls whose completion hasn't run yet.
+final class PendingCalls {
+    final class Call {
+        fileprivate let owner: AnyObject
+        fileprivate let completion: (() -> Void)?
+        fileprivate(set) var finished = false
+
+        fileprivate init(owner: AnyObject, completion: (() -> Void)?) {
+            self.owner = owner
+            self.completion = completion
+        }
+    }
+
+    private var calls: [Call] = []
+
+    func begin(owner: AnyObject, completion: (() -> Void)?) -> Call {
+        let call = Call(owner: owner, completion: completion)
+        calls.append(call)
+        return call
+    }
+
+    /// Runs the call's completion unless it already ran.
+    func finish(_ call: Call) {
+        guard !call.finished else { return }
+        call.finished = true
+        calls.removeAll { $0 === call }
+        call.completion?()
+    }
+
+    /// Finishes every unfinished call made on `owner`, oldest first.
+    func finishAll(owner: AnyObject) {
+        for call in calls where call.owner === owner { finish(call) }
+    }
+}
+
+/// Pure pieces of the capture path, free of HAL state so they can be unit-tested.
+enum CaptureDSP {
+    /// The AUHAL client format: the device's own rate and channel count, Float32
+    /// non-interleaved. The channel-count initializer returns nil above two channels,
+    /// so wider inputs (multichannel interfaces, aggregates) get a discrete layout.
+    static func captureFormat(sampleRate: Double, channels: UInt32) -> AVAudioFormat? {
+        guard sampleRate > 0, channels > 0, channels <= 0xFFFF else { return nil }
+        if channels <= 2 {
+            return AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: sampleRate,
+                                 channels: channels, interleaved: false)
+        }
+        guard let layout = AVAudioChannelLayout(layoutTag: kAudioChannelLayoutTag_DiscreteInOrder | channels) else {
+            return nil
+        }
+        return AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: sampleRate,
+                             interleaved: false, channelLayout: layout)
+    }
+
+    /// Mixes `channelCount` planar channels of `frames` samples into `dst`. Averages only
+    /// the inputs whose RMS in this chunk is at least 10% (−20 dB) of the loudest one's:
+    /// an unused input on a multi-input interface would otherwise cut the mic by 6 dB
+    /// (more with more inputs) before the VAD. All channels silent → zeros.
+    /// No heap allocation: the per-channel energies live in temporary (stack) storage.
+    static func downmix(_ channels: UnsafePointer<UnsafeMutablePointer<Float>>, channelCount: Int, frames: Int,
+                        into dst: UnsafeMutablePointer<Float>) {
+        guard frames > 0, channelCount > 0 else { return }
+        if channelCount == 1 {
+            memcpy(dst, channels[0], frames * MemoryLayout<Float>.size)
+            return
+        }
+        withUnsafeTemporaryAllocation(of: Float.self, capacity: channelCount) { energy in
+            var loudest: Float = 0
+            for c in 0..<channelCount {
+                let ch = channels[c]
+                var sum: Float = 0
+                for i in 0..<frames { sum += ch[i] * ch[i] }
+                energy[c] = sum
+                loudest = max(loudest, sum)
+            }
+            memset(dst, 0, frames * MemoryLayout<Float>.size)
+            guard loudest > 0 else { return }
+            // RMS ≥ 10% of the loudest RMS ⇔ energy ≥ 1% of its energy (same frame count).
+            let floor = loudest * 0.01
+            var live = 0
+            for c in 0..<channelCount where energy[c] >= floor {
+                live += 1
+                let ch = channels[c]
+                for i in 0..<frames { dst[i] += ch[i] }
+            }
+            let inv = 1 / Float(live)
+            for i in 0..<frames { dst[i] *= inv }
+        }
+    }
+
+    /// A capture that ended with render errors and not a single rendered frame has a
+    /// broken input unit; drop it so the next start builds a fresh one.
+    static func shouldDropTap(renderErrors: Int, renderedFrames: Int) -> Bool {
+        renderErrors > 0 && renderedFrames == 0
+    }
+}
+
+/// A HAL property listener that `remove()` really removes. The block API can't do that
+/// from Swift: `AudioObjectPropertyListenerBlock` imports as a Swift closure type and is
+/// bridged to a new block on every call, so Remove never matches what Add registered and
+/// listeners pile up (checked: a block still fires after Remove, at -O and -Onone, even
+/// when the same stored `@convention(block)` value is passed to both). The C-proc API
+/// matches on (proc, client data), which are stable here.
+final class HALPropertyListener {
+    private final class Handler {
+        let queue: DispatchQueue
+        let onChange: () -> Void
+        init(queue: DispatchQueue, onChange: @escaping () -> Void) {
+            self.queue = queue
+            self.onChange = onChange
+        }
+    }
+
+    private static let proc: AudioObjectPropertyListenerProc = { _, _, _, data in
+        guard let data else { return noErr }
+        let handler = Unmanaged<Handler>.fromOpaque(data).takeUnretainedValue()
+        handler.queue.async(execute: handler.onChange)
+        return noErr
+    }
+
+    private let object: AudioObjectID
+    private let context: UnsafeMutableRawPointer
+    private var registered: [AudioObjectPropertySelector] = []
+
+    /// `onChange` runs on `queue`.
+    init(object: AudioObjectID, selectors: [AudioObjectPropertySelector], queue: DispatchQueue,
+         onChange: @escaping () -> Void) {
+        self.object = object
+        // Never released: a notification already in flight on a HAL thread may still read
+        // it after Remove returns. A few dozen bytes per device rebuild.
+        context = Unmanaged.passRetained(Handler(queue: queue, onChange: onChange)).toOpaque()
+        for selector in selectors {
+            var addr = Self.address(selector)
+            if AudioObjectAddPropertyListener(object, &addr, Self.proc, context) == noErr {
+                registered.append(selector)
+            }
+        }
+    }
+
+    func remove() {
+        for selector in registered {
+            var addr = Self.address(selector)
+            AudioObjectRemovePropertyListener(object, &addr, Self.proc, context)
+        }
+        registered = []
+    }
+
+    private static func address(_ selector: AudioObjectPropertySelector) -> AudioObjectPropertyAddress {
+        AudioObjectPropertyAddress(mSelector: selector, mScope: kAudioObjectPropertyScopeGlobal,
+                                   mElement: kAudioObjectPropertyElementMain)
     }
 }
 
@@ -91,9 +270,10 @@ private final class InputTap {
     /// Client format: the device's own rate and channel count, Float32 non-interleaved.
     /// AUHAL cannot resample on the input side, so the converter downstream does it.
     let format: AVAudioFormat
-    /// Render failures since the last `takeRenderErrors()`; touched only by the IO thread
-    /// and by the owner while the unit is stopped.
+    /// Render failures and rendered frames since the last `takeRenderStats()`; touched only
+    /// by the IO thread and by the owner while the unit is stopped.
     private var renderErrors = 0
+    private var renderedFrames = 0
     private let scratch: AVAudioPCMBuffer
     private var pending: AVAudioPCMBuffer
     private let chunkFrames: AVAudioFrameCount
@@ -117,6 +297,7 @@ private final class InputTap {
         scratch.frameLength = frames
         let status = AudioUnitRender(unit, flags, timeStamp, 1, frames, scratch.mutableAudioBufferList)
         guard status == noErr else { renderErrors += 1; return status }
+        renderedFrames += Int(frames)
         append(scratch)
         return noErr
     }
@@ -144,9 +325,9 @@ private final class InputTap {
         pending = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: chunkFrames)!
     }
 
-    func takeRenderErrors() -> Int {
-        defer { renderErrors = 0 }
-        return renderErrors
+    func takeRenderStats() -> (errors: Int, frames: Int) {
+        defer { renderErrors = 0; renderedFrames = 0 }
+        return (renderErrors, renderedFrames)
     }
 }
 
@@ -168,7 +349,7 @@ private final class Capture {
                                                     sampleRate: 16_000, channels: 1, interleaved: false)!
 
     private var tap: InputTap?
-    private var deviceListener: AudioObjectPropertyListenerBlock?
+    private var deviceListener: HALPropertyListener?
     private var input: InputSelection = .systemDefault
     private var isRecording = false
     /// Device whose input mute we lifted in `start`; re-muted in `stop`.
@@ -274,9 +455,8 @@ private final class Capture {
             try check(AudioUnitGetProperty(unit, kAudioUnitProperty_StreamFormat, kAudioUnitScope_Input, 1,
                                            &deviceFormat, &size), "read device format")
             pttLog("AudioRecorder device format: sampleRate=\(deviceFormat.mSampleRate) channels=\(deviceFormat.mChannelsPerFrame)")
-            guard deviceFormat.mSampleRate > 0, deviceFormat.mChannelsPerFrame > 0,
-                  let format = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: deviceFormat.mSampleRate,
-                                             channels: deviceFormat.mChannelsPerFrame, interleaved: false) else {
+            guard let format = CaptureDSP.captureFormat(sampleRate: deviceFormat.mSampleRate,
+                                                        channels: deviceFormat.mChannelsPerFrame) else {
                 throw AudioRecorderError.invalidInputFormat(sampleRate: deviceFormat.mSampleRate,
                                                             channels: deviceFormat.mChannelsPerFrame)
             }
@@ -307,7 +487,7 @@ private final class Capture {
 
     private func dropTap() {
         guard let tap else { return }
-        unwatch(tap.device)
+        unwatch()
         AudioUnitUninitialize(tap.unit)
         AudioComponentInstanceDispose(tap.unit)
         self.tap = nil
@@ -358,10 +538,16 @@ private final class Capture {
         guard isRecording, let tap else { isRecording = false; return }
         AudioOutputUnitStop(tap.unit)
         tap.flush()
-        let errors = tap.takeRenderErrors()
-        if errors > 0 { pttLog("AudioRecorder: \(errors) render errors during capture") }
+        let stats = tap.takeRenderStats()
+        if stats.errors > 0 {
+            pttLog("AudioRecorder: \(stats.errors) render errors during capture (\(stats.frames) frames rendered)")
+        }
         delivery.sync {}
         isRecording = false
+        if CaptureDSP.shouldDropTap(renderErrors: stats.errors, renderedFrames: stats.frames) {
+            pttLog("AudioRecorder: no frame rendered — dropping the input unit so the next start rebuilds it")
+            dropTap()
+        }
     }
 
     private func check(_ status: OSStatus, _ operation: String) throws {
@@ -375,22 +561,14 @@ private final class Capture {
     private static let watchedProperties = [kAudioDevicePropertyNominalSampleRate, kAudioDevicePropertyDeviceIsAlive]
 
     private func watch(_ device: AudioDeviceID) {
-        let listener: AudioObjectPropertyListenerBlock = { [weak self] _, _ in self?.handleDeviceChange() }
-        for selector in Self.watchedProperties {
-            var addr = AudioObjectPropertyAddress(mSelector: selector, mScope: kAudioObjectPropertyScopeGlobal,
-                                                  mElement: kAudioObjectPropertyElementMain)
-            AudioObjectAddPropertyListenerBlock(device, &addr, queue, listener)
+        deviceListener?.remove()
+        deviceListener = HALPropertyListener(object: device, selectors: Self.watchedProperties, queue: queue) {
+            [weak self] in self?.handleDeviceChange()
         }
-        deviceListener = listener
     }
 
-    private func unwatch(_ device: AudioDeviceID) {
-        guard let listener = deviceListener else { return }
-        for selector in Self.watchedProperties {
-            var addr = AudioObjectPropertyAddress(mSelector: selector, mScope: kAudioObjectPropertyScopeGlobal,
-                                                  mElement: kAudioObjectPropertyElementMain)
-            AudioObjectRemovePropertyListenerBlock(device, &addr, queue, listener)
-        }
+    private func unwatch() {
+        deviceListener?.remove()
         deviceListener = nil
     }
 
@@ -434,19 +612,26 @@ private final class Capture {
 
     // MARK: - Device mute
 
+    /// Runs before our unit starts on `id`, so our own IO can't make the device look busy.
     private func unmuteIfNeeded(_ id: AudioDeviceID?) {
         guard let id else { return }
         pttLog("AudioRecorder input device: \(InputDevice.describe(id))")
-        guard InputDevice.isMuted(id) == true else { return }
+        let muted = InputDevice.isMuted(id)
+        guard muted == true else { return }
+        let elsewhere = InputDevice.isCapturingElsewhere(id)
+        guard InputDevice.shouldLiftMute(muted: muted, capturingElsewhere: elsewhere) else {
+            pttLog("AudioRecorder: input is muted at device level while another app is capturing from it — leaving it muted")
+            return
+        }
         if InputDevice.setMuted(id, false) {
             mutedDevice = id
-            pttLog("AudioRecorder: input was muted at device level — unmuted for recording")
+            pttLog("AudioRecorder: input was muted at device level (in use elsewhere: \(elsewhere.map { "\($0)" } ?? "unknown")) — unmuted for recording")
         } else {
             pttLog("AudioRecorder: input is muted at device level and cannot be unmuted")
         }
     }
 
-    private func restoreMute() {
+    func restoreMute() {
         guard let id = mutedDevice else { return }
         mutedDevice = nil
         InputDevice.setMuted(id, true)
@@ -488,17 +673,7 @@ private final class Capture {
         guard let out = AVAudioPCMBuffer(pcmFormat: monoFormat, frameCapacity: frames),
               let dst = out.floatChannelData?[0] else { return nil }
         out.frameLength = frames
-        let n = Int(frames)
-        if channels == 1 {
-            memcpy(dst, channelData[0], n * MemoryLayout<Float>.size)
-        } else {
-            let inv = 1.0 / Float(channels)
-            for i in 0..<n {
-                var sum: Float = 0
-                for c in 0..<channels { sum += channelData[c][i] }
-                dst[i] = sum * inv
-            }
-        }
+        CaptureDSP.downmix(channelData, channelCount: channels, frames: Int(frames), into: dst)
         return out
     }
 }

@@ -33,7 +33,8 @@ public enum InputSelection: Equatable, Hashable {
 ///
 /// Bluetooth headsets (AirPods in particular) can carry a device-level input mute
 /// set by a call app or a stem press. Capture then delivers pure zeros, so
-/// the recorder lifts the mute for the duration of a recording and restores it.
+/// the recorder lifts the mute for the duration of a recording and restores it —
+/// unless another app is capturing from the device, where the mute is deliberate.
 public enum InputDevice {
     public static func defaultID() -> AudioDeviceID? {
         var id = AudioDeviceID(0)
@@ -158,6 +159,76 @@ public enum InputDevice {
               settable.boolValue else { return false }
         var v: UInt32 = muted ? 1 : 0
         return AudioObjectSetPropertyData(id, &addr, 0, nil, UInt32(MemoryLayout<UInt32>.size), &v) == noErr
+    }
+
+    /// Whether to lift a device-level input mute for a hold. A stale mute (AirPods after a
+    /// call) recorded nothing, so it is lifted; but not while another app is capturing from
+    /// the device — the user muted themselves in a meeting and the call would hear the
+    /// dictation. When that can't be told (`nil`), keep the stale-mute fix.
+    static func shouldLiftMute(muted: Bool?, capturingElsewhere: Bool?) -> Bool {
+        muted == true && capturingElsewhere != true
+    }
+
+    /// Whether another process is capturing from `id` right now; `nil` when it can't be told.
+    /// Call it before our own unit starts on the device.
+    public static func isCapturingElsewhere(_ id: AudioDeviceID) -> Bool? {
+        var somewhere: UInt32 = 0, here: UInt32 = 0
+        let hasSomewhere = get(id, kAudioDevicePropertyDeviceIsRunningSomewhere, kAudioObjectPropertyScopeGlobal,
+                               &somewhere)
+        let hasHere = get(id, kAudioDevicePropertyDeviceIsRunning, kAudioObjectPropertyScopeGlobal, &here)
+        var outputs = address(kAudioDevicePropertyStreams, kAudioDevicePropertyScopeOutput)
+        var outputSize: UInt32 = 0
+        let hasOutput = AudioObjectGetPropertyDataSize(id, &outputs, 0, nil, &outputSize) == noErr && outputSize > 0
+        return capturingElsewhere(otherProcessCapturing: otherProcessCapturing(id),
+                                  runningSomewhere: hasSomewhere ? somewhere != 0 : nil,
+                                  runningHere: hasHere ? here != 0 : nil,
+                                  hasOutput: hasOutput)
+    }
+
+    /// Combines the HAL's answers. Process objects (macOS 14+) tell input from output and
+    /// leave out this process. `IsRunningSomewhere` is device-wide — playback alone sets it
+    /// on a headset — so it only proves capture on an input-only device, where it also
+    /// catches another app's aggregate wrapping the mic. `IsRunning` is this process's own
+    /// IO, which must never count as "elsewhere".
+    static func capturingElsewhere(otherProcessCapturing: Bool?, runningSomewhere: Bool?,
+                                   runningHere: Bool?, hasOutput: Bool) -> Bool? {
+        if otherProcessCapturing == true { return true }
+        if runningSomewhere == true, runningHere != true, !hasOutput { return true }
+        if otherProcessCapturing == false { return false }
+        if runningSomewhere == false { return false }
+        return nil
+    }
+
+    /// Whether a process other than this one runs input IO on `id`. `nil` without HAL
+    /// process objects (before macOS 14) or when they can't be read.
+    private static func otherProcessCapturing(_ id: AudioDeviceID) -> Bool? {
+        guard let processes = objectIDs(AudioObjectID(kAudioObjectSystemObject),
+                                        kAudioHardwarePropertyProcessObjectList,
+                                        kAudioObjectPropertyScopeGlobal) else { return nil }
+        let me = getpid()
+        for process in processes {
+            var pid: pid_t = 0
+            var running: UInt32 = 0
+            guard get(process, kAudioProcessPropertyPID, kAudioObjectPropertyScopeGlobal, &pid), pid != me,
+                  get(process, kAudioProcessPropertyIsRunningInput, kAudioObjectPropertyScopeGlobal, &running),
+                  running != 0 else { continue }
+            if objectIDs(process, kAudioProcessPropertyDevices, kAudioObjectPropertyScopeInput)?.contains(id) == true {
+                return true
+            }
+        }
+        return false
+    }
+
+    private static func objectIDs(_ id: AudioObjectID,
+                                  _ selector: AudioObjectPropertySelector,
+                                  _ scope: AudioObjectPropertyScope) -> [AudioObjectID]? {
+        var addr = address(selector, scope)
+        guard AudioObjectHasProperty(id, &addr) else { return nil }
+        var size: UInt32 = 0
+        guard AudioObjectGetPropertyDataSize(id, &addr, 0, nil, &size) == noErr else { return nil }
+        var ids = [AudioObjectID](repeating: 0, count: Int(size) / MemoryLayout<AudioObjectID>.size)
+        guard ids.isEmpty || AudioObjectGetPropertyData(id, &addr, 0, nil, &size, &ids) == noErr else { return nil }
+        return Array(ids.prefix(Int(size) / MemoryLayout<AudioObjectID>.size))
     }
 
     private static func address(_ selector: AudioObjectPropertySelector,
