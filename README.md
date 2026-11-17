@@ -16,16 +16,16 @@ A free, local alternative to paid Whisper wrappers. Built for one reason: talkin
 
 ## Features
 
-- **Local transcription** through WhisperKit (CoreML, GPU)
+- **Local transcription** — NVIDIA Parakeet Ultra through FluidAudio (Core ML, Neural Engine; macOS 14+ on Apple Silicon) or OpenAI Whisper Turbo through WhisperKit (Core ML)
 - **Optional cloud engines** — Google Gemini or OpenAI with your own API key, for higher accuracy on mixed-language speech and jargon
 - **Code-switching RU/EN/UK and more** — in auto mode the language is chosen only from the ones you have in System Settings → Language & Region
 - **Insertion without clipboard** — via `CGEventKeyboardSetUnicodeString`; password fields are skipped
-- **Menu bar popover** with recent transcriptions (click to copy) and metrics: dictations today / yesterday, 7-day avg WPM, each with its change vs. a week ago
+- **Menu bar popover** with recent transcriptions (click to copy) and metrics: dictations today / yesterday with the change vs. yesterday at the same time, and 7-day avg WPM with its change vs. a week ago
 - **HUD overlay** while you hold the key: dark pill with a live mic level; if a dictation fails (no model, bad API key, quota), the reason shows in the same pill
 - **Light text cleanup** — trims long "eeeeee / mmmmm / ummm", collapses 3+ consecutive repeats, capitalizes the first letter and adds a period
-- **Optional filler-word removal** — off by default; drops "ну / короче / как бы / um / you know" from an editable list (Whisper, OpenAI) or by context (Gemini)
+- **Optional filler-word removal** — off by default; drops "ну / короче / как бы / um / you know" from an editable list (Parakeet, Whisper, OpenAI) or by context (Gemini)
 - **Liquid Glass** on macOS 26 and later — the HUD, popover, Preferences and onboarding use the system glass; macOS 13–15 keep the classic look
-- **Terminology dictionary** — canonical IT terms (pull request, Kubernetes, Claude Code, …) replace misrecognized Russian transliterations in transcripts; ships with ~110 defaults and is fully editable
+- **Terminology dictionary** — canonical IT terms (pull request, Kubernetes, Claude Code, …) replace misrecognized Russian transliterations in transcripts; ships with defaults for Russian (~140 entries), English (~110) and Ukrainian (~120) and is fully editable
 
 ## Install
 
@@ -41,6 +41,8 @@ On first launch, choose how speech is recognized — **NVIDIA Parakeet Ultra** (
 - **Accessibility** — for the global hotkey and text insertion
 - **Input Monitoring** — to use Right Option / Right Cmd (or the hotkey you choose) as push-to-talk
 
+With OpenAI Whisper Turbo selected, onboarding also shows a fourth, optional row — **Documents folder** — so HoldSpeak can reuse WhisperKit models another app keeps in `~/Documents`. Without it HoldSpeak still works and downloads the model into its own folder; **Done** only waits for the three permissions above.
+
 The onboarding window has Open… and Re-check buttons.
 
 <p align="center">
@@ -49,13 +51,13 @@ The onboarding window has Open… and Re-check buttons.
 
 ### Updating
 
-The app checks GitHub for new versions in the background and shows an **Update available** banner in the menu bar popover. You can also trigger a check manually via Preferences → General → **Check for updates**.
+The app checks GitHub for new versions in the background and shows a *"v… available"* banner in the menu bar popover. You can also trigger a check manually via Preferences → General → **Check for updates**.
 
 1. Click **Download** in the banner — it opens the latest release on GitHub.
 2. Download the `.dmg`, open it, and drag `HoldSpeak.app` into `Applications`. macOS will ask to replace the old copy — confirm.
 3. Quit the running app from the menu bar (Quit), then launch the new one from `Applications`.
 
-Your preferences, history, and downloaded models live in `~/Library/Application Support/HoldSpeak/` and are preserved across updates.
+Your preferences live in the app's defaults (`com.timmal.push-to-talk`); history, the terminology dictionary and downloaded models live in `~/Library/Application Support/HoldSpeak/`. All of them are preserved across updates.
 
 ### Model
 
@@ -68,7 +70,7 @@ Preferences → Audio → **Model** lists the models in two groups, best first i
   <img src="docs/screenshots/preferences-models.webp?v=1" width="560" alt="Preferences · Audio · Model list" />
 </p>
 
-If you already have MacWhisper / another WhisperKit client installed, their models will be picked up automatically. Otherwise the first model is downloaded to `~/Library/Application Support/HoldSpeak/Models/`.
+If you already have MacWhisper / another WhisperKit client installed, their Whisper models will be picked up automatically (models under `~/Documents/huggingface/` need the optional Documents permission), and so will a Parakeet model another FluidAudio app keeps in `~/Library/Application Support/FluidAudio/Models/`. Otherwise the model is downloaded to `~/Library/Application Support/HoldSpeak/models/` — Parakeet into its `parakeet-ultra` subfolder there.
 
 To free disk space, Preferences → Audio → **Downloaded models → Delete…** removes every model HoldSpeak downloaded. Models that belong to MacWhisper or other apps are left alone.
 
@@ -116,7 +118,7 @@ Both are dedicated transcription models rather than chat models, so they don't f
 
 With a cloud engine selected, Preferences → Audio → **Fallback: Try other engines if this one fails** (off by default) keeps dictation working when the selected engine can't transcribe — credits used up, quota, a rejected key, the service down, no internet. The same audio then goes to the other cloud engine, if its key is saved, and then to the local model you picked last (OpenAI Whisper Turbo or NVIDIA Parakeet Ultra) on this Mac; the HUD says why and who answered (*"OpenAI credits used up · Used Gemini instead"*, *"… · Used OpenAI Whisper Turbo instead"*). Without internet the other cloud engine is skipped and the local model answers straight away.
 
-Whisper isn't kept in memory while a cloud engine is selected: the first fallback loads the model (a few extra seconds), then it stays loaded. If the model isn't downloaded yet, the first fallback starts the download and that dictation is lost; without internet it can't be downloaded at all, so download it in advance (the checkbox offers a button).
+The local model isn't kept in memory while a cloud engine is selected: the first fallback loads the model (a few extra seconds), then it stays loaded. If the model isn't downloaded yet, the first fallback starts the download and that dictation is lost; without internet it can't be downloaded at all, so download it in advance (the checkbox offers a button).
 
 Privacy: with Gemini or OpenAI, each dictation's audio is sent to Google or OpenAI respectively. The local models (NVIDIA Parakeet Ultra, OpenAI Whisper Turbo) stay the default and never send anything anywhere. Text cleanup, the "Add period" / "Capitalize" / "Remove filler words" options and the terminology dictionary apply to every engine; the cloud engines also receive your dictionary's terms as spelling hints.
 
@@ -134,7 +136,7 @@ Whisper Tiny and Small are no longer offered: if you had one selected, HoldSpeak
 ## Usage
 
 1. Hold **Right Option** (or whatever you set in Preferences).
-2. Speak. A HUD appears in the top right corner (or bottom center — configurable) showing the mic level.
+2. Speak. A HUD appears at the bottom center of the screen (or under the menu bar icon — configurable) showing the mic level.
 3. Release the key. After ~1–2 s the text is inserted into the focused field.
 4. If the field lost focus — open the menu bar icon: it shows the recent transcriptions; click to copy.
 
@@ -160,7 +162,7 @@ By default, presses shorter than **150 ms** don't start recording — the key be
 
 Preferences → Audio → **Remove filler words** (off by default) cleans up the "ну", "короче", "как бы", "um", "you know" you say while thinking:
 
-- **Whisper, OpenAI** — a text field appears with an editable, comma-separated list, prefilled with common Russian and English fillers. Only whole words are removed (any case), together with the comma after them, so *"Ну, короче, давай созвонимся"* becomes *"Давай созвонимся."* and *"нужно"* is left alone. Words that often carry meaning — *типа*, *вот*, *like* — aren't in the default list; add them if you want.
+- **Parakeet, Whisper, OpenAI** — a text field appears with an editable, comma-separated list, prefilled with common Russian and English fillers. Only whole words are removed (any case), together with the comma after them, so *"Ну, короче, давай созвонимся"* becomes *"Давай созвонимся."* and *"нужно"* is left alone. Words that often carry meaning — *типа*, *вот*, *like* — aren't in the default list; add them if you want.
 - **Gemini** — no list: the model is asked to drop fillers by context and keep the ones that mean something (*"объект типа Promise"*, *"I like it"*).
 
 ### Auto language detection
@@ -179,7 +181,7 @@ Whisper reliably recognizes common speech but routinely mangles IT terminology i
   <img src="docs/screenshots/preferences-terms.webp?v=4" width="560" alt="Preferences · Terms" />
 </p>
 
-**Default dictionaries.** The app ships with curated IT defaults for **Russian (~110 entries)**, **English (~120)**, and **Ukrainian (~130)** — all spanning the whole dev cycle: VCS (pull request, rebase, cherry-pick), languages (TypeScript, Swift, Rust), frontend (React, Tailwind, Next.js), UX (wireframe, mockup, accessibility), backend (endpoint, middleware, migration), data (Postgres, Redis, ClickHouse), DevOps (Docker, Kubernetes, Helm chart), cloud (AWS, S3, Lambda), and AI tooling (Claude, MCP, Opus). On first launch the bundled lists are copied into your Application Support directory — from then on the files are yours.
+**Default dictionaries.** The app ships with curated IT defaults for **Russian (~140 entries)**, **English (~110)**, and **Ukrainian (~120)** — all spanning the whole dev cycle: VCS (pull request, rebase, cherry-pick), languages (TypeScript, Swift, Rust), frontend (React, Tailwind, Next.js), UX (wireframe, mockup, accessibility), backend (endpoint, middleware, migration), data (Postgres, Redis, MongoDB), DevOps (Docker, Kubernetes, Terraform), cloud (AWS, S3, Lambda), and AI tooling (Claude, Claude Code, MCP). The first time a language's set becomes active (as the Primary language, as the detected language in Auto mode, or in the Terms editor), its bundled list is copied into your Application Support directory — from then on the file is yours.
 
 **Switching languages in the editor.** Preferences → Terms has a **Last detected** picker (top-right, styled like the General dropdowns). It defaults to the language of your most recent utterance, but you can switch it to any other language to edit that set — handy for seeding an English dictionary before you start dictating in English.
 
@@ -197,7 +199,10 @@ Whisper reliably recognizes common speech but routinely mangles IT terminology i
 ## Architecture
 
 - `Sources/Core` — pure logic (hotkey, recorder, inserter, text cleaner, storage, metrics, Gemini and OpenAI API clients, Keychain)
-- `Sources/Whisper` — transcription engines: WhisperKit (local), Gemini and OpenAI (cloud) behind one `TranscriptionEngine` facade, model manager
+- `Sources/Whisper` — transcription engines: WhisperKit and Parakeet (local), Gemini and OpenAI (cloud) behind one `TranscriptionEngine` facade, model manager
+- `Sources/Parakeet` — `HoldSpeakParakeet.framework`: FluidAudio's Parakeet behind a small bridge. FluidAudio needs macOS 14, so the framework is built for 14, embedded but not linked, and loaded at runtime on macOS 14+ on Apple Silicon
+- `Sources/ParakeetShared` — the `@objc` protocol the app and that framework talk through (compiled into both)
+- `Sources/ObjCCatch` — a tiny Objective-C helper that turns AVFoundation's Objective-C exceptions into Swift errors
 - `Sources/UI` — SwiftUI: menu bar popover, preferences, onboarding, HUD
 - `Sources/App` — AppDelegate and entry point
 
@@ -215,9 +220,22 @@ tail -f ~/Library/Logs/HoldSpeak.log
 
 **Hotkey doesn't fire.** Check Input Monitoring and Accessibility in System Settings → Privacy & Security. When the signature changes (e.g. a fresh ad-hoc build) TCC may drop entries — delete and re-add, or run `scripts/setup-signing.sh` and rebuild.
 
-**Recognizes silence / empty result.** Check the input level in System Settings → Sound → Input. In the logs, look at `finalize: rms=...` — normal speech is ≥ 0.02. If you see `0.0005` the mic is quiet (wrong device / muted / mic TCC not granted).
+**Recognizes silence / empty result.** Check the input level in System Settings → Sound → Input. In the logs, every dictation has a `finalize: VAD …` line with `noise=` (the level of the quietest tenth of the recording) and `peak=` (its loudest 30 ms). A `peak` of 0.02 or more always counts as speech; room noise on the built-in mic is around 0.004–0.009. `VAD dropped buffer` means no speech was found in the recording; if `peak` stays close to `noise` there, the mic is quiet (wrong device / muted / mic TCC not granted). A recording of pure zeros shows *"Microphone gave no signal"* in the HUD.
 
 **Confuses Ukrainian / Russian with English in auto.** Auto relies on `Locale.preferredLanguages`. Make sure the language is actually listed in System Settings → Language & Region, or switch Preferences → Audio from Auto to an explicit Russian / English.
+
+## Building from source
+
+You need Xcode with the macOS 26 SDK or later (the Liquid Glass code calls macOS 26 APIs behind `#available`, so an older SDK won't compile it) and [XcodeGen](https://github.com/yonaskolb/XcodeGen): the Xcode project isn't in the repo, it is generated from `project.yml`. The app itself targets macOS 13; the Parakeet framework targets macOS 14.
+
+```bash
+xcodegen generate
+xcodebuild -scheme HoldSpeak -configuration Debug -derivedDataPath build build
+```
+
+The app ends up in `build/Build/Products/Debug/HoldSpeak.app`. `swift test` runs the unit tests in `Tests/`; the Swift package covers only `Sources/Core` (and the `Sources/ObjCCatch` helper), not the UI, the app or the engines. See [CONTRIBUTING.md](CONTRIBUTING.md) for details.
+
+Careful with `scripts/rebuild.sh`: it replaces `/Applications/HoldSpeak.app` with a Debug build, and without the `HoldSpeak Dev (self-signed)` identity that `scripts/setup-signing.sh` creates it signs the app ad hoc, so macOS forgets the permissions you granted.
 
 ## License
 

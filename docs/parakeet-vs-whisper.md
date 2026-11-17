@@ -2,7 +2,7 @@
 
 Measured 2026-10-18 on an M2 Max (64 GB), macOS 27.0.1, with `scripts/asr-compare`.
 FluidAudio 0.17.7 (Parakeet Ultra, Core ML on the Neural Engine) vs WhisperKit 0.18.0
-(the versions the app builds with).
+(the versions the app builds with). Whisper Small has since been removed from the app (HS-13).
 
 **Caveat: the audio is synthetic.** Every clip was spoken by macOS `say` (Milena for
 Russian and mixed, Samantha for English). TTS is clean, evenly paced and has no room
@@ -12,7 +12,7 @@ useful parts. Repeat with real recordings before drawing quality conclusions.
 
 ## Summary
 
-| | Whisper Turbo (app default) | Whisper Small | Parakeet Ultra |
+| | Whisper Turbo | Whisper Small | Parakeet Ultra |
 |---|---:|---:|---:|
 | Latency, ~4 s clip (median) | 2.47–2.60 s | 0.38–0.54 s | **0.06–0.07 s** |
 | Latency, ~18 s clip (median) | 3.1–3.4 s | 1.0–1.4 s | **0.17–0.18 s** |
@@ -22,7 +22,7 @@ useful parts. Repeat with real recordings before drawing quality conclusions.
 | Load, first time for this binary / model copy | 5.6 s | — | 12.4–12.7 s |
 | Process memory peak (footprint / resident) | 137 / 1452 MB | 118 / 149 MB | 71 / 121 MB |
 
-- **Parakeet is ~15–40× faster than the app's default Whisper Turbo** and 5–8× faster
+- **Parakeet is ~15–40× faster than Whisper Turbo** and 5–8× faster
   than Whisper Small. A 4 s dictation is ready in ~60 ms after release; Turbo needs
   ~2.5 s regardless of length (it encodes a full 30 s window twice: language
   detection, then decoding). The app's own log shows the same Turbo figure for real
@@ -103,21 +103,23 @@ the engines.
 
 Parakeet Ultra: 613 MB in `~/Library/Application Support/HoldSpeak/models/parakeet-ultra`
 (FluidAudio's folder name for the HF repo `FluidInference/parakeet-ultra-coreml`).
-Whisper Turbo: 1545 MB (the copy MacWhisper downloaded, which HoldSpeak reuses) —
-noticeably more than the "~800 MB" in the app's model label; Whisper Small: 479 MB
-(label says ~250 MB).
+Whisper Turbo: 1545 MB (the copy MacWhisper downloaded, which HoldSpeak reuses);
+Whisper Small: 479 MB. The app's model labels say 610 MB for Parakeet Ultra and 1.5 GB
+for Whisper Turbo.
 
 ## How Parakeet is wired into the app
 
-- New local engine `parakeet` with model `ParakeetModelID.ultra`; the Audio tab's Model
-  dropdown has a "Parakeet — on this Mac, free" section. Download / status / "Delete…"
+- Local engine `parakeet` with model `ParakeetModelID.ultra` ("NVIDIA Parakeet Ultra");
+  the Audio tab's Model dropdown lists it first in the "On this Mac — free, works
+  offline" section, above Whisper Turbo. Download / status / "Delete…"
   work like Whisper's (the model goes to HoldSpeak's own `models/` folder; a copy in
   `~/Library/Application Support/FluidAudio/Models` from another FluidAudio app is reused).
 - Engine fallback: cloud engines fall back to the local engine picked last (Whisper or
   Parakeet); the HUD names it.
 - Text cleanup: terminology, auto punctuation/capitalisation and the filler list apply;
-  the Whisper hallucination list (subtitle boilerplate) does not. The language for
-  terminology and history is guessed from the transcript's alphabet.
+  the Whisper hallucination list (subtitle boilerplate) does not. In Auto mode the
+  language for terminology and history is guessed from the transcript's alphabet;
+  otherwise it is the Primary language.
 - **macOS 14 gating:** FluidAudio requires macOS 14; the app targets 13, and Swift
   refuses to import a module built for a newer OS. So FluidAudio lives in
   `HoldSpeakParakeet.framework` (deployment target 14), embedded but not linked; on
@@ -129,7 +131,7 @@ noticeably more than the "~800 MB" in the app's model label; Whisper Small: 479 
 
 ```bash
 scripts/asr-compare/make-audio.sh        # regenerate the clips from clips.tsv (optional)
-scripts/asr-compare/run.sh               # app default Whisper + Parakeet, one process each
+scripts/asr-compare/run.sh               # Whisper Turbo + Parakeet Ultra, one process each
 scripts/asr-compare/run.sh whisper:openai_whisper-small parakeet:ru   # other variants
 scripts/asr-compare/bridge-smoke.sh      # app's Parakeet bridge, from the Debug build
 ```

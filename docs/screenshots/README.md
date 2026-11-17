@@ -1,17 +1,15 @@
 # Screenshots
 
-Exported from the Figma source: https://www.figma.com/design/7pKarPia4V2GkZpCg0NmvI/random?node-id=115-7799
+Images used by the main [README](../../README.md) (WebP):
 
-Expected files (PNG, 2x scale, dark variant):
-
-| File                          | Figma node | Frame name              |
-|-------------------------------|------------|-------------------------|
-| `popover.png`                 | `128:5115` | B — Dark glass · Popover |
-| `preferences-general.png`     | `128:5149` | Preferences · General    |
-| `preferences-audio.png`       | `128:5213` | Preferences · Audio      |
-| `preferences-support.png`     | `147:5111` | Preferences · Support    |
-
-## How to export
-
-In Figma: select the frame → right panel → Export → PNG @ 2x → Export.
-Save into this directory with the filename from the table above.
+| File                            | Shows                                         |
+|---------------------------------|-----------------------------------------------|
+| `logo.webp`                     | App logo                                      |
+| `popover.webp`                  | Menu bar popover                              |
+| `onboarding.webp`               | Onboarding · choose the engine                |
+| `preferences-models.webp`       | Preferences · Audio · Model list              |
+| `preferences-audio-gemini.webp` | Preferences · Audio with Gemini selected      |
+| `hud-quota.webp`                | HUD · Gemini daily limit reached              |
+| `preferences-general.webp`      | Preferences · General                         |
+| `preferences-audio.webp`        | Preferences · Audio with NVIDIA Parakeet Ultra |
+| `preferences-terms.webp`        | Preferences · Terms                           |
