@@ -10,8 +10,11 @@ struct APIKeyEditor: View {
     @Environment(\.colorScheme) private var scheme
     @State private var draft = ""
     @State private var check: Check = .idle
+    /// Identifies the key check in flight; cleared when the provider changes, so a
+    /// result that arrives afterwards is dropped instead of landing on the other provider.
+    @State private var checkToken: UUID?
 
-    private enum Check { case idle, checking, invalid, unreachable }
+    private enum Check { case idle, checking, invalid, unreachable, saveFailed }
 
     init(provider: CloudProvider, width: CGFloat = 280) {
         self.provider = provider
@@ -31,7 +34,7 @@ struct APIKeyEditor: View {
                         .frame(minWidth: 36)
                 }
                 .pttButton()
-                .disabled(trimmedDraft.isEmpty || check == .checking)
+                .disabled(trimmedDraft.isEmpty || check == .checking || keysLoading)
             }
 
             HStack(spacing: 6) {
@@ -41,8 +44,12 @@ struct APIKeyEditor: View {
                 Text(statusText)
                     .font(.system(size: 11))
                     .foregroundColor(PTT.textMuted(scheme))
-                if hasKey, check == .idle {
-                    Button("Remove") { prefs.setAPIKey(nil, for: provider) }
+                if keysUnavailable, check == .idle {
+                    Button("Try again") { prefs.reloadAPIKeys() }
+                        .buttonStyle(.link)
+                        .font(.system(size: 11))
+                } else if hasKey, check == .idle || check == .saveFailed {
+                    Button("Remove") { store(nil) }
                         .buttonStyle(.link)
                         .font(.system(size: 11))
                 }
@@ -57,14 +64,23 @@ struct APIKeyEditor: View {
                 .fixedSize(horizontal: false, vertical: true)
                 .frame(width: width, alignment: .leading)
         }
+        .onAppear { prefs.warmAPIKeys() }
         // Switching the model between providers reuses this view for the other one.
         .onChange(of: provider) { _ in
             draft = ""
             check = .idle
+            checkToken = nil
         }
     }
 
-    private var hasKey: Bool { prefs.hasAPIKey(provider) }
+    /// Never reads the Keychain on main: until `warmAPIKeys` is done the view says so.
+    private var hasKey: Bool { !keysLoading && prefs.hasAPIKey(provider) }
+    private var keysLoading: Bool {
+        let availability = prefs.apiKeyAvailability
+        return availability == .notLoaded || availability == .loading
+    }
+    /// The Keychain prompt was denied: the keys may be there, this session can't read them.
+    private var keysUnavailable: Bool { prefs.apiKeysUnavailable }
 
     private var keyPageTitle: String {
         switch provider {
@@ -98,22 +114,30 @@ struct APIKeyEditor: View {
         case .checking:    return "Checking the key with \(provider.company)…"
         case .invalid:     return "\(provider.company) rejected this key."
         case .unreachable: return "Couldn't reach \(provider.company) — check your connection."
-        case .idle:        return hasKey ? "API key saved in Keychain" : "No API key"
+        case .saveFailed:  return "Couldn't save to Keychain"
+        case .idle:
+            if keysLoading { return "Reading Keychain…" }
+            if keysUnavailable { return "Keychain access was denied" }
+            return hasKey ? "API key saved in Keychain" : "No API key"
         }
     }
 
     private var statusColor: Color {
         switch check {
-        case .invalid, .unreachable: return PTT.recordingRed
+        case .invalid, .unreachable, .saveFailed: return PTT.recordingRed
         case .checking:              return PTT.textSoft(scheme)
-        case .idle:                  return hasKey ? PTT.statusGreen : PTT.textSoft(scheme)
+        case .idle:
+            if keysUnavailable { return PTT.recordingRed }
+            return hasKey ? PTT.statusGreen : PTT.textSoft(scheme)
         }
     }
 
     private func save() {
         let key = trimmedDraft
-        guard !key.isEmpty, check != .checking else { return }
+        guard !key.isEmpty, check != .checking, !keysLoading else { return }
         check = .checking
+        let token = UUID()
+        checkToken = token
         let provider = provider
         Task { @MainActor in
             let result: APIKeyCheck
@@ -121,18 +145,28 @@ struct APIKeyEditor: View {
             case .gemini: result = await GeminiClient().check(apiKey: key)
             case .openai: result = await OpenAIClient().check(apiKey: key)
             }
-            // The user switched providers while the check was running.
-            guard provider == self.provider else { return }
+            // `self` is the copy captured at Save, so `self.provider` can't tell; the
+            // token is @State and reads the live value. Nil or newer: the user switched
+            // providers while the check ran, so this result is dropped, key included.
+            guard checkToken == token else { return }
+            checkToken = nil
             switch result {
             case .valid:
-                prefs.setAPIKey(key, for: provider)
-                draft = ""
-                check = .idle
+                if store(key) { draft = "" }
             case .invalid:
                 check = .invalid
             case .unreachable:
                 check = .unreachable
             }
         }
+    }
+
+    /// Saves (nil removes) the key and shows the outcome. While Keychain access is
+    /// denied nothing is written and the status line says so; the draft stays.
+    @discardableResult
+    private func store(_ key: String?) -> Bool {
+        let saved = prefs.setAPIKey(key, for: provider)
+        check = saved || prefs.apiKeysUnavailable ? .idle : .saveFailed
+        return saved
     }
 }
