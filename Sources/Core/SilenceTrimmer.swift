@@ -6,7 +6,7 @@ import Foundation
 public struct SilenceTrimmer {
     public var windowSamples: Int = 480          // 30 ms at 16 kHz
     public var floor: Float = 0.0008
-    public var relative: Float = 0.10            // threshold = max(floor, relative * peak)
+    public var relative: Float = 0.10            // trim threshold = max(floor, relative * peak), capped at the speech threshold
     public var paddingMs: Int = 250
     public var minDurationMs: Int = 150
     public var maxSilenceFraction: Float = 0.98
@@ -51,10 +51,15 @@ public struct SilenceTrimmer {
         }
     }
 
+    /// A window louder than this is speech, for the gate and the trim alike.
+    private func speechThreshold(noiseFloor: Float) -> Float {
+        min(noiseFloor * noiseSNR, speechLevel)
+    }
+
     private func stats(windows rms: [Float]) -> Stats {
         let sorted = rms.sorted()
         let noise = sorted.isEmpty ? 0 : max(floor, sorted[sorted.count / 10])
-        let threshold = min(noise * noiseSNR, speechLevel)
+        let threshold = speechThreshold(noiseFloor: noise)
         let hold = threshold * holdRatio
         var run = 0, longest = 0, voiced = 0
         var crossed = false     // current run has a window above `threshold`
@@ -98,9 +103,11 @@ public struct SilenceTrimmer {
         let windowCount = rms.count
         let speech = stats(windows: rms)
         if speech.voicedRunMs < minVoicedRunMs { return nil }
-        let peak = speech.peak
-
-        let threshold = max(floor, relative * peak)
+        // Capped at the gate's speech threshold: one click or cough ten times
+        // louder than the speech would otherwise lift `relative * peak` above
+        // every speech window and trim away what the gate just called speech.
+        let threshold = min(max(floor, relative * speech.peak),
+                            speechThreshold(noiseFloor: speech.noiseFloor))
         var firstVoice = -1
         var lastVoice = -1
         var silentCount = 0
