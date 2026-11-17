@@ -62,7 +62,9 @@ public final class TranscriptionEngine {
     }
 
     public func finalize(samples: [Float]) async -> TranscriptionResult {
-        guard !samples.isEmpty else { pttLog("finalize: samples empty (no audio captured)"); return .empty }
+        // Only held takes get here (a tap is discarded), so an empty buffer means the
+        // capture never delivered, not that the user said nothing.
+        guard !samples.isEmpty else { pttLog("finalize: samples empty (no audio captured)"); return .failed(.noAudioCaptured) }
         let rawMs = Int(Double(samples.count) / 16.0)
         guard let trimmed = vad.trimSilence(samples) else {
             pttLog("finalize: VAD dropped buffer (raw=\(rawMs)ms \(vad.stats(samples)))")
@@ -131,7 +133,10 @@ public final class TranscriptionEngine {
                          fallback: ModelFallbackNotice(failure: failure, usedEngine: model.shortLabel))
         case .empty:
             return .empty
-        case .failed:
+        case .failed(let local):
+            // The HUD names the selected engine's failure, the reason for the switch,
+            // not the backup's (e.g. `.engineFailed`); the backup's goes to the log.
+            pttLog("fallback: \(model.shortLabel) failed too (\(local))")
             return .failed(failure)
         }
     }
