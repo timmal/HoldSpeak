@@ -4,8 +4,11 @@ import ServiceManagement
 
 @MainActor
 final class ModelsViewModel: ObservableObject {
-    @Published var downloading = false
-    @Published var progress: Double = 0
+    /// A model download is running, whoever started it (Preferences, onboarding, the
+    /// engine fallback): mirrors `ModelManager.downloads`.
+    @Published private(set) var downloading = false
+    /// Progress of the download started most recently.
+    @Published private(set) var progress: Double = 0
     /// Disk used by models HoldSpeak downloaded itself (not other apps' copies).
     @Published var managedBytes: Int64 = 0
     /// Called on main after a successful download, so the engine can load the model.
@@ -19,15 +22,23 @@ final class ModelsViewModel: ObservableObject {
         isLocated(model) ? "Downloaded" : "Not downloaded"
     }
 
+    init() {
+        ModelManager.shared.downloads.onChange = { [weak self] in self?.syncDownloads() }
+        syncDownloads()
+    }
+
+    private func syncDownloads() {
+        let downloads = ModelManager.shared.downloads
+        let latest = downloads.running.last
+        downloading = latest != nil
+        progress = latest.flatMap(downloads.progress(of:)) ?? 0
+    }
+
     func download(_ model: LocalModel) async {
-        guard !downloading else { return }
-        downloading = true
-        progress = 0
-        defer { downloading = false }
+        // One model at a time; asking again for the one downloading joins it.
+        if let running = ModelManager.shared.downloads.running.first, running != model { return }
         do {
-            _ = try await ModelManager.shared.download(model) { [weak self] p in
-                Task { @MainActor in self?.progress = p }
-            }
+            _ = try await ModelManager.shared.download(model) { _ in }
             onDownloaded?(model)
         } catch {
             NSLog("%@", "Model download failed: \(error)")

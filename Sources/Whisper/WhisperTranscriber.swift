@@ -45,12 +45,11 @@ final class WhisperTranscriber {
         try await task.value
     }
 
+    /// Loads from disk only. A missing model is downloaded by `ModelsViewModel.download`,
+    /// with progress, never here.
     private func load(model: WhisperModelID) async throws {
-        let url: URL
-        if let local = ModelManager.shared.locateModel(model) {
-            url = local
-        } else {
-            url = try await ModelManager.shared.download(model) { _ in }
+        guard let url = ModelManager.shared.locateModel(model) else {
+            throw ModelNotDownloadedError(model: model.shortLabel)
         }
         let config = WhisperKitConfig(modelFolder: url.path,
                                       verbose: false,

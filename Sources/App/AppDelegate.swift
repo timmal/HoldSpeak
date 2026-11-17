@@ -92,9 +92,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         appliedLocalModel = prefs.localModel
         appliedEngine = prefs.engineChosen ? prefs.engine : nil
         // A fresh install loads nothing until onboarding picks an engine; the cloud engines
-        // never need a local model in memory (~1.5 GB for Whisper Turbo).
+        // never need a local model in memory (~1.5 GB for Whisper Turbo). A model that
+        // isn't on disk is not fetched here: the user may have deleted it on purpose, and
+        // a download belongs in Preferences, where its progress shows.
         if prefs.engineChosen, prefs.engine.isLocal {
-            loadModel(prefs.localModel)
+            if ModelManager.shared.locate(prefs.localModel) != nil {
+                loadModel(prefs.localModel)
+            } else {
+                pttLog("Model \(prefs.localModel.shortLabel) not downloaded — waiting for a download in Preferences")
+            }
         }
 
         NotificationCenter.default.addObserver(forName: .openPreferences, object: nil, queue: .main) { [weak self] note in
