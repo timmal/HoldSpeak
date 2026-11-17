@@ -90,6 +90,15 @@ public enum TranscriptionFailure: Error, Equatable {
     /// OpenAI: the prepaid balance or the monthly budget is used up.
     case outOfCredits(CloudProvider)
     case unreachable(CloudProvider)
+    /// The request got no answer in time (`URLError.timedOut`). The connection may be
+    /// fine, so other engines are still tried; the same model is not asked again.
+    case timedOut(CloudProvider)
+    /// The take is over the provider's upload limit: caught before uploading, or HTTP 413.
+    /// The sibling model has the same limit, so no model fallback; another engine may take it.
+    case audioTooLong(CloudProvider)
+    /// The provider answered but withheld the transcript (Gemini: a safety, recitation or
+    /// prohibited-content block). Not silence, so it is shown; another engine may take it.
+    case blocked(CloudProvider)
     case serviceError(CloudProvider, status: Int)
     /// The cloud engine failed with the wrapped error and the backup local model
     /// (`backup` is its name, `LocalModel.shortLabel`) is still downloading.
@@ -110,6 +119,9 @@ public enum TranscriptionFailure: Error, Equatable {
             return daily ? "\(p.name) daily limit reached" : "\(p.name) rate limit reached"
         case .outOfCredits(let p):   return "\(p.name) credits used up"
         case .unreachable(let p):    return "\(p.name) unreachable"
+        case .timedOut(let p):       return "\(p.name) took too long"
+        case .audioTooLong(let p):   return "Take too long for \(p.name)"
+        case .blocked(let p):        return "\(p.name) blocked this take"
         case .serviceError(let p, let status): return "\(p.name) error (HTTP \(status))"
         case .backupDownloading(let failure, _): return failure.title
         case .noMicSignal:           return "Microphone gave no signal"
@@ -133,6 +145,9 @@ public enum TranscriptionFailure: Error, Equatable {
             return "Try again in a moment"
         case .outOfCredits:         return "Add credits or raise the limit in OpenAI Billing"
         case .unreachable:          return "Check your internet connection"
+        case .timedOut:             return "Try again, or dictate in shorter takes"
+        case .audioTooLong:         return "Dictate in shorter takes"
+        case .blocked:              return "Flagged by its content filter"
         case .serviceError:         return "Try again in a moment"
         case .backupDownloading(_, let backup): return "Downloading \(backup) as a backup…"
         case .noMicSignal:          return "Check the input in Preferences → Audio"
@@ -153,12 +168,58 @@ public enum TranscriptionFailure: Error, Equatable {
         return false
     }
 
+    /// A request that threw before any HTTP response: only a timeout is told apart,
+    /// everything else (no route, DNS, TLS, dropped connection) counts as offline.
+    public static func transport(_ error: Error, provider: CloudProvider) -> TranscriptionFailure {
+        if let urlError = error as? URLError, urlError.code == .timedOut { return .timedOut(provider) }
+        return .unreachable(provider)
+    }
+
     /// How long the HUD keeps the message up.
     public var displaySeconds: Double {
         switch self {
         case .quotaExceeded, .outOfCredits, .backupDownloading: return 6
         default: return 4
         }
+    }
+}
+
+/// Request limits shared by the cloud clients.
+public enum CloudLimits {
+    /// How long a transcription request may wait for the provider's answer: 20 s for a
+    /// take of up to 20 s, then half a second more per further second of audio, at most 90 s.
+    /// URLSession applies it as an idle timeout, so a long upload in progress doesn't trip it;
+    /// it bounds the wait for the transcript once the audio is sent.
+    public static func requestTimeout(durationMs: Int) -> TimeInterval {
+        let seconds = Double(max(0, durationMs)) / 1000
+        return min(90, 20 + max(0, seconds - 20) * 0.5)
+    }
+
+    /// The largest upload a provider accepts, checked before sending. Gemini: the whole
+    /// JSON request with the base64 audio inline (4/3 of the WAV), "Maximum request size is
+    /// 20 MB total (including prompts and all files)". OpenAI: the audio file, "Files can be
+    /// up to 25 MB". Both from the providers' docs as of November 2026; taken as decimal MB,
+    /// which is below the 20 MiB / 25 MiB the servers seem to enforce, so we err towards
+    /// stopping a take that might have passed rather than uploading one that will bounce.
+    public static func maxUploadBytes(_ provider: CloudProvider) -> Int {
+        switch provider {
+        case .gemini: return 20_000_000
+        case .openai: return 25_000_000
+        }
+    }
+}
+
+/// Scrubs API keys out of text bound for the log file. OpenAI's 401 body echoes the
+/// key it rejected (masked, but with its first and last characters).
+public enum LogRedaction {
+    /// `sk-…` (OpenAI) and `AIza…` (Google), full or masked with `*`, `…` or `...`,
+    /// not preceded by a letter or digit (so "task-force" stays).
+    private static let keyPattern = try! NSRegularExpression(
+        pattern: #"(?<![A-Za-z0-9])(?:sk-|AIza)(?:[A-Za-z0-9_*\-]|…|\\u2026|\.\.\.)+"#)
+
+    public static func apiKeys(_ text: String) -> String {
+        keyPattern.stringByReplacingMatches(in: text, range: NSRange(text.startIndex..., in: text),
+                                            withTemplate: "<redacted>")
     }
 }
 

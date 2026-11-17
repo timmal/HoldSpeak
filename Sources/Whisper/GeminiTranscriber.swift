@@ -21,7 +21,8 @@ final class GeminiTranscriber {
         let wav = CloudAudio.wav(trimmed)
         let prompt = GeminiAPI.prompt(language: language, terms: terms, removeFillers: prefs.removeFillers)
         return await runner.run(preferred: prefs.geminiModel, language: language, durationMs: durationMs) { model in
-            let text = try await client.transcribe(wav: wav, model: model, prompt: prompt, apiKey: apiKey)
+            let text = try await client.transcribe(wav: wav, model: model, prompt: prompt, apiKey: apiKey,
+                                                durationMs: durationMs)
             return (text, nil)
         }
     }

@@ -121,6 +121,8 @@ public enum OpenAIAPI {
         // 403 also covers a restricted key without the audio permission.
         case 401, 403:
             return .invalidAPIKey(.openai)
+        case 413:
+            return .audioTooLong(.openai)
         case 429:
             if code == "insufficient_quota" { return .outOfCredits(.openai) }
             let retry = retryAfter.flatMap(Double.init).map { Int($0.rounded(.up)) }
@@ -138,13 +140,17 @@ public struct OpenAIClient {
         self.session = session
     }
 
-    /// Throws `TranscriptionFailure`.
+    /// Throws `TranscriptionFailure`. `durationMs` is the length of the audio in `wav`.
     public func transcribe(wav: Data, model: OpenAIModelID, language: String?, terms: [String],
-                           apiKey: String) async throws -> (text: String, language: String?) {
+                           apiKey: String, durationMs: Int) async throws -> (text: String, language: String?) {
+        guard wav.count <= CloudLimits.maxUploadBytes(.openai) else {
+            pttLog("openai audio too large: \(wav.count) bytes, not sent")
+            throw TranscriptionFailure.audioTooLong(.openai)
+        }
         let boundary = "HoldSpeak-\(UUID().uuidString)"
         var request = URLRequest(url: OpenAIAPI.baseURL.appendingPathComponent("audio/transcriptions"))
         request.httpMethod = "POST"
-        request.timeoutInterval = 20
+        request.timeoutInterval = CloudLimits.requestTimeout(durationMs: durationMs)
         request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
         request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
         request.httpBody = OpenAIAPI.multipartBody(
@@ -157,13 +163,13 @@ public struct OpenAIClient {
             do {
                 (data, response) = try await session.data(for: request)
             } catch {
-                pttLog("openai request failed: \(error)")
-                throw TranscriptionFailure.unreachable(.openai)
+                pttLog("openai request failed: \(LogRedaction.apiKeys("\(error)"))")
+                throw TranscriptionFailure.transport(error, provider: .openai)
             }
             let http = response as? HTTPURLResponse
             let status = http?.statusCode ?? 0
             if status == 200 { return OpenAIAPI.extractTranscript(data) }
-            pttLog("openai HTTP \(status): \(String(decoding: data.prefix(300), as: UTF8.self))")
+            pttLog("openai HTTP \(status): \(LogRedaction.apiKeys(String(decoding: data.prefix(300), as: UTF8.self)))")
             guard attempt == 0, OpenAIAPI.isRetryable(status: status) else {
                 throw OpenAIAPI.failure(status: status, body: data,
                                         retryAfter: http?.value(forHTTPHeaderField: "retry-after"))

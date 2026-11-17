@@ -20,7 +20,8 @@ final class OpenAITranscriber {
             .map(\.canonical)
         let wav = CloudAudio.wav(trimmed)
         return await runner.run(preferred: prefs.openAIModel, language: language, durationMs: durationMs) { model in
-            try await client.transcribe(wav: wav, model: model, language: language, terms: terms, apiKey: apiKey)
+            try await client.transcribe(wav: wav, model: model, language: language, terms: terms, apiKey: apiKey,
+                                        durationMs: durationMs)
         }
     }
 }
