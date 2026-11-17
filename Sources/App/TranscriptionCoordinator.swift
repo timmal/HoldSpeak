@@ -70,6 +70,8 @@ final class TranscriptionCoordinator {
             // By the engine that answered, which may be a fallback rather than the selected one.
             // The list is Whisper's own subtitle boilerplate; Parakeet doesn't produce it.
             dropHallucinations: result.engine == .whisper,
+            // Whisper invents "[музыка]", "(applause)" on noise; elsewhere brackets are dictated content.
+            stripInlineAnnotations: result.engine == .whisper,
             // Gemini is asked to drop fillers by context; the others get the list.
             fillers: prefs.removeFillers && result.engine != .gemini
                 ? TextCleaner.parseFillers(prefs.fillerWords) : []
@@ -90,7 +92,13 @@ final class TranscriptionCoordinator {
             // Blind typing isn't confirmed by AX, so history doesn't claim it landed.
             inserted: insertion == .inserted
         )
-        _ = try? store.append(record)
+        // The text is already typed, so there's nothing to show; just leave a trace.
+        // GRDB errors carry the SQL with placeholders, never the bound values.
+        do {
+            _ = try store.append(record)
+        } catch {
+            pttLog("history append failed: \(error)")
+        }
 
         switch insertion {
         case .inserted:          return .inserted

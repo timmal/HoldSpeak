@@ -86,6 +86,46 @@ final class TextCleanerTests: XCTestCase {
         XCTAssertEqual(cleaned("that that is true"), "That is true.")
     }
 
+    // MARK: - Bracketed annotations: inline ones are stripped only for Whisper (HS-48)
+
+    /// Whisper: what every call gets by default.
+    private func whisper(_ text: String) -> String {
+        TextCleaner.clean(text, dropHallucinations: true, stripInlineAnnotations: true)
+    }
+    /// Parakeet, Gemini, OpenAI.
+    private func otherEngine(_ text: String) -> String {
+        TextCleaner.clean(text, dropHallucinations: false, stripInlineAnnotations: false)
+    }
+
+    func test_annotations_defaultStripsInline() {
+        XCTAssertEqual(TextCleaner.clean("Привет [музыка] как дела"), "Привет как дела.")
+    }
+    func test_annotations_dictatedParenthetical() {
+        XCTAssertEqual(whisper("Вызови foo (опционально) и верни результат"), "Вызови foo и верни результат.")
+        XCTAssertEqual(otherEngine("Вызови foo (опционально) и верни результат"),
+                       "Вызови foo (опционально) и верни результат.")
+    }
+    func test_annotations_subscripts() {
+        XCTAssertEqual(whisper("array[0] и dict[key]"), "Array и dict.")
+        XCTAssertEqual(otherEngine("array[0] и dict[key]"), "Array[0] и dict[key].")
+    }
+    func test_annotations_aloneDroppedOnEveryEngine() {
+        for text in ["[музыка]", "(applause) (laughter)", "  [music].  ", "[музыка] [аплодисменты]", "(silence)"] {
+            XCTAssertEqual(whisper(text), "", text)
+            XCTAssertEqual(otherEngine(text), "", text)
+        }
+    }
+    func test_annotations_inlineSoundEvent() {
+        XCTAssertEqual(whisper("Привет [музыка] как дела"), "Привет как дела.")
+        XCTAssertEqual(otherEngine("Привет [музыка] как дела"), "Привет [музыка] как дела.")
+    }
+    func test_annotations_unclosedBracketKept() {
+        XCTAssertEqual(whisper("Вызови foo (опционально и верни"), "Вызови foo (опционально и верни.")
+        XCTAssertEqual(otherEngine("Вызови foo (опционально и верни"), "Вызови foo (опционально и верни.")
+        XCTAssertEqual(whisper("array[0"), "Array[0.")
+        XCTAssertEqual(otherEngine("array[0"), "Array[0.")
+    }
+
     // MARK: - Terminology canonicalization
 
     private var dict: [TerminologyEntry] {

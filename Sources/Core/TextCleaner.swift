@@ -23,11 +23,20 @@ public enum TextCleaner {
         #"(?:\p{N}+\s+){\#(leadingNumbers)}\p{N}*\p{L}[\p{L}\p{N}]*(?:\s+[\p{L}\p{N}]+){0,\#(4 - leadingNumbers)}"#
     }.joined(separator: "|")
 
+    /// Whisper "sound event" annotations: [музыка], [music], (applause), etc.
+    /// Removed inline only for Whisper; on the other engines brackets are real
+    /// content ("foo (опционально)", "array[0]") and only an utterance made of
+    /// nothing but annotations is dropped.
+    private static let annotation = Rule(pattern: #"[\[\(][^\]\)]{1,40}[\]\)]"#,
+                                         replacement: "", options: [])
+
+    private static func apply(_ rule: Rule, to s: String) -> String {
+        let range = NSRange(s.startIndex..., in: s)
+        return rule.regex.stringByReplacingMatches(in: s, range: range, withTemplate: rule.replacement)
+    }
+
     /// Compiled once; NSRegularExpression is safe to share across threads.
     private static let rules: [Rule] = [
-        // Whisper "sound event" annotations: [музыка], [music], (applause), etc.
-        Rule(pattern: #"[\[\(][^\]\)]{1,40}[\]\)]"#,
-             replacement: "", options: []),
         // Only drop extended hesitation sounds (эээ, эмммм, ummm, uhhh)
         Rule(pattern: #"\b(э{3,}|м{3,}|эм{2,}|um{2,}|uh{2,}|uhm+)\b"#,
              replacement: "", options: [.caseInsensitive]),
@@ -94,16 +103,19 @@ public enum TextCleaner {
         autoPunctuation: Bool = true,
         autoCapitalize: Bool = true,
         dropHallucinations: Bool = true,
+        stripInlineAnnotations: Bool = true,
         fillers: [String] = []
     ) -> String {
         var s = removeFillers(input, fillers: fillers)
-        for rule in rules {
-            let range = NSRange(s.startIndex..., in: s)
-            s = rule.regex.stringByReplacingMatches(in: s, range: range, withTemplate: rule.replacement)
-        }
+        if stripInlineAnnotations { s = apply(annotation, to: s) }
+        for rule in rules { s = apply(rule, to: s) }
         s = s.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines.union(CharacterSet(charactersIn: ",;:")))
         guard !s.isEmpty else { return "" }
         if s.rangeOfCharacter(from: .alphanumerics) == nil { return "" }
+        // Annotations and nothing else ("[music]", "(applause) (laughter)"): noise on any engine.
+        if !stripInlineAnnotations, apply(annotation, to: s).rangeOfCharacter(from: .alphanumerics) == nil {
+            return ""
+        }
         // Drop the utterance entirely if its normalized form is a known Whisper hallucination.
         // Off for the cloud engines: they don't produce this boilerplate, so "Спасибо" is real speech.
         if dropHallucinations, isHallucination(s) { return "" }
