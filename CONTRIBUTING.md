@@ -18,15 +18,20 @@ Thanks for wanting to help. This page covers what you need to build the app, wha
 ```bash
 swift test                 # Core logic tests
 xcodegen generate          # writes HoldSpeak.xcodeproj from project.yml
+mkdir -p HoldSpeak.xcodeproj/project.xcworkspace/xcshareddata/swiftpm
+cp Xcode.resolved HoldSpeak.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved
 xcodebuild -project HoldSpeak.xcodeproj -scheme HoldSpeak -configuration Debug \
-  -derivedDataPath ./build CODE_SIGNING_ALLOWED=NO build
+  -derivedDataPath ./build -onlyUsePackageVersionsFromResolvedFile \
+  CODE_SIGNING_ALLOWED=NO build
 ```
+
+The `cp` line and `-onlyUsePackageVersionsFromResolvedFile` pin the dependencies to the tracked `Xcode.resolved`, as CI and the scripts do: a lock file that no longer matches `project.yml` fails the build instead of being re-resolved. Copy it again after every `xcodegen generate`. The comment above the copy step in `scripts/release.sh` says how to bump a dependency.
 
 Or open `HoldSpeak.xcodeproj` in Xcode after `xcodegen generate` and run the `HoldSpeak` scheme. Re-run `xcodegen generate` whenever you add, remove or rename files, or change `project.yml`. `Resources/Info.plist` and `Resources/HoldSpeak.entitlements` are written by XcodeGen from `project.yml` — change them there, not by hand.
 
-The scripts and CI build with the dependency versions pinned in the tracked `Xcode.resolved`; to do the same by hand, after `xcodegen generate` run `mkdir -p HoldSpeak.xcodeproj/project.xcworkspace/xcshareddata/swiftpm && cp Xcode.resolved HoldSpeak.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved` and add `-onlyUsePackageVersionsFromResolvedFile` to the `xcodebuild` line.
+**What `swift test` covers.** `Package.swift` builds only `Sources/Core` and `Sources/ObjCCatch` and runs the XCTest suite in `Tests/`. It does **not** compile `Sources/App`, `Sources/UI`, `Sources/Whisper`, `Sources/Parakeet` or `Sources/ParakeetShared` — those build only through the generated Xcode project. A change can pass `swift test` and still break the app, so run the `xcodebuild` line above too. CI runs both on every pull request (`.github/workflows/ci.yml`), unsigned. Under `swift test` the code logs to `HoldSpeak-tests.log` in the temporary directory, not to your `~/Library/Logs/HoldSpeak.log`.
 
-**What `swift test` covers.** `Package.swift` builds only `Sources/Core` and `Sources/ObjCCatch` and runs the XCTest suite in `Tests/`. It does **not** compile `Sources/App`, `Sources/UI`, `Sources/Whisper`, `Sources/Parakeet` or `Sources/ParakeetShared` — those build only through the generated Xcode project. A change can pass `swift test` and still break the app, so run the `xcodebuild` line above too. CI runs both on every pull request (`.github/workflows/ci.yml`), unsigned.
+**Dictated text in the log.** `~/Library/Logs/HoldSpeak.log` gets the length of each transcript, never its text, in Debug and Release builds alike. To see the text while you debug text handling, run `defaults write com.timmal.push-to-talk debugLogTranscripts -bool YES` and relaunch the app; turn it off with `defaults delete com.timmal.push-to-talk debugLogTranscripts`.
 
 ## Running your build: `scripts/rebuild.sh`
 
@@ -62,6 +67,8 @@ If you'd rather not touch `/Applications`, build with Xcode and run it from ther
 ## Releases
 
 Releases are cut by the maintainer: version bump, signed build, DMG and GitHub release. Don't bump versions in `project.yml` or add tags in your PR.
+
+For the maintainer: `scripts/release.sh --build-only <version>` runs the same tests, Release build, signing with the hardened runtime and checks as a release, and leaves `dist/HoldSpeak.app` and `dist/HoldSpeak-<version>.dmg` to install and test by hand. It then reverts the version bump, and commits, tags, pushes and publishes nothing; it doesn't need `main` and leaves the installed app alone. It does need the `HoldSpeak Dev (self-signed)` identity and no uncommitted changes to tracked files.
 
 ## Security
 
