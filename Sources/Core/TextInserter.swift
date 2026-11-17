@@ -95,6 +95,13 @@ public enum TextInserter {
     public static func insert(_ text: String) async -> InsertionResult {
         guard !text.isEmpty else { return .noFocus }
 
+        // insert runs on the main thread, which also runs the keyboard event tap: every AX
+        // round trip below must be bounded. The timeout cannot be set per element on the
+        // system-wide object; setting it there changes this process's default, which every
+        // element without its own timeout uses. TextInserter is the only AX client here.
+        let systemWide = AXUIElementCreateSystemWide()
+        AXUIElementSetMessagingTimeout(systemWide, appMessagingTimeout)
+
         let running = NSWorkspace.shared.frontmostApplication
         let appElement = running.map { AXUIElementCreateApplication($0.processIdentifier) }
         if let appElement { AXUIElementSetMessagingTimeout(appElement, appMessagingTimeout) }
@@ -103,7 +110,7 @@ public enum TextInserter {
         // System-wide first: it also sees non-activating panels (Spotlight, Raycast) that
         // aren't the frontmost app.
         var via = "system-wide"
-        var (element, focus) = queryFocus(AXUIElementCreateSystemWide())
+        var (element, focus) = queryFocus(systemWide)
         var axErrors = [focus.errorName].compactMap { $0 }.map { "system-wide:\($0)" }
         if element == nil, let appElement {
             via = "app"
@@ -170,6 +177,9 @@ public enum TextInserter {
             return (nil, .failed(status == .success ? .noValue : status))
         }
         let element = focusedObj as! AXUIElement
+        // A returned element doesn't inherit its root's timeout; set it explicitly so the
+        // bound holds even if the process default is ever reset.
+        AXUIElementSetMessagingTimeout(element, appMessagingTimeout)
         var role: AnyObject?, subrole: AnyObject?
         AXUIElementCopyAttributeValue(element, kAXRoleAttribute as CFString, &role)
         AXUIElementCopyAttributeValue(element, kAXSubroleAttribute as CFString, &subrole)

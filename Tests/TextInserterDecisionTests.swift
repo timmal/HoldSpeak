@@ -41,6 +41,17 @@ final class TextInserterDecisionTests: XCTestCase {
         XCTAssertEqual(action(facts(focus: .failed(.cannotComplete), app: native)), .typeBlind)
     }
 
+    /// An AX timeout (hung or slow target) reports .cannotComplete and takes the same
+    /// fallbacks as any other non-.apiDisabled failure.
+    func test_axTimeout_fallsThroughLikeAnyFocusFailure() {
+        let timedOut = InsertionFacts.Focus.failed(.cannotComplete)
+        XCTAssertEqual(action(facts(focus: timedOut, app: native)), .typeBlind)
+        XCTAssertEqual(action(facts(focus: timedOut, app: electron)), .enableManualAccessibility)
+        XCTAssertEqual(action(facts(focus: timedOut, app: electron, tried: true)), .typeBlind)
+        XCTAssertEqual(action(facts(focus: timedOut, app: native, secureInput: true)), .skipSecureField)
+        XCTAssertEqual(action(facts(focus: timedOut, app: nil)), .noFocus)
+    }
+
     func test_blind_withSecureInput_isSkipped() {
         XCTAssertEqual(action(facts(focus: .failed(.noValue), app: native, secureInput: true)), .skipSecureField)
         XCTAssertEqual(action(facts(focus: .failed(.noValue), app: electron, tried: true, secureInput: true)),
