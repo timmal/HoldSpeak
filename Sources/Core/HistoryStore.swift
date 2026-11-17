@@ -50,7 +50,14 @@ public final class HistoryStore: HistoryStoring {
     public init(url: URL) throws {
         try FileManager.default.createDirectory(at: url.deletingLastPathComponent(),
                                                 withIntermediateDirectories: true)
-        dbQueue = try DatabaseQueue(path: url.path)
+        var config = Configuration()
+        // Dictation text is private: make SQLite overwrite deleted content with
+        // zeros instead of leaving it readable in free pages. Covers clear(),
+        // the `maxEntries` cap in append(), and any future delete.
+        config.prepareDatabase { db in
+            try db.execute(sql: "PRAGMA secure_delete = ON")
+        }
+        dbQueue = try DatabaseQueue(path: url.path, configuration: config)
         try migrate()
     }
 
@@ -158,5 +165,10 @@ public final class HistoryStore: HistoryStoring {
     public func clear() throws {
         try dbQueue.write { db in try db.execute(sql: "DELETE FROM transcriptions") }
         NotificationCenter.default.post(name: .historyDidChange, object: nil)
+        // secure_delete zeroes what this DELETE frees, but text deleted by older
+        // versions (before secure_delete) may still sit in free pages. VACUUM
+        // rebuilds the file from live rows only; it cannot run inside a
+        // transaction, so GRDB runs it via writeWithoutTransaction.
+        try dbQueue.vacuum()
     }
 }
