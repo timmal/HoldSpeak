@@ -62,13 +62,12 @@ final class ParakeetTranscriber {
         try await task.value
     }
 
+    /// Loads from disk only. A missing model is downloaded by `ModelsViewModel.download`,
+    /// with progress, never here.
     private func load(model: ParakeetModelID) async throws {
         guard let engine = ParakeetLoader.engine() else { throw ParakeetError.unavailable }
-        let url: URL
-        if let local = ModelManager.shared.locateParakeet(model) {
-            url = local
-        } else {
-            url = try await ModelManager.shared.download(.parakeet(model)) { _ in }
+        guard let url = ModelManager.shared.locateParakeet(model) else {
+            throw ModelNotDownloadedError(model: model.shortLabel)
         }
         let started = Date()
         try await engine.load(model: model.rawValue, from: url.path)

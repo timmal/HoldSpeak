@@ -1,6 +1,13 @@
 import Foundation
 import WhisperKit
 
+/// A load was asked for a model that isn't on disk. Loading never downloads: the
+/// download runs from Preferences or onboarding (`ModelsViewModel.download`), with progress.
+public struct ModelNotDownloadedError: LocalizedError {
+    public let model: String
+    public var errorDescription: String? { "\(model) is not downloaded" }
+}
+
 public final class ModelManager {
     public static let shared = ModelManager()
     private init() {}
@@ -29,17 +36,13 @@ public final class ModelManager {
         return docs.appendingPathComponent("huggingface/models/argmaxinc/whisperkit-coreml")
     }
 
+    /// A complete copy of `id`: HoldSpeak's own, else MacWhisper's, else the one in
+    /// ~/Documents/huggingface. A partial folder anywhere is skipped, so it reads as
+    /// "Not downloaded" and can be downloaded again rather than failing every load.
     public func locateModel(_ id: WhisperModelID) -> URL? {
-        let fm = FileManager.default
-        let managed = managedDirectory().appendingPathComponent(id.rawValue)
-        if fm.fileExists(atPath: managed.path) { return managed }
-        let macWhisper = macWhisperDirectory().appendingPathComponent(id.rawValue)
-        if fm.fileExists(atPath: macWhisper.path) { return macWhisper }
-        let external = externalWhisperKitDirectory().appendingPathComponent(id.rawValue)
-        if fm.fileExists(atPath: external.path), fm.isReadableFile(atPath: external.path) {
-            return external
-        }
-        return nil
+        let candidates = [managedDirectory(), macWhisperDirectory(), externalWhisperKitDirectory()]
+            .map { $0.appendingPathComponent(id.rawValue) }
+        return ModelFolders.firstComplete(candidates) { WhisperSupport.modelExists(in: $0) }
     }
 
     /// Where FluidAudio-based apps (and FluidAudio's own CLI) keep Parakeet by default.
@@ -101,23 +104,39 @@ public final class ModelManager {
         return total
     }
 
+    /// Downloads in flight, one per model. `ModelsViewModel` watches it (`onChange`), so
+    /// Preferences and onboarding show a download whoever started it.
+    @MainActor public let downloads = SingleFlight<LocalModel, URL>()
+
+    /// Downloads `model` into HoldSpeak's folder. A second call for a model that is
+    /// already downloading joins that download instead of writing the same files again.
+    /// `progress` is called on main.
     @MainActor
     public func download(_ model: LocalModel,
-                         progress: @escaping @Sendable (Double) -> Void) async throws -> URL {
+                         progress: @escaping (Double) -> Void) async throws -> URL {
+        try await downloads.run(model, progress: progress) { [self] report in
+            try await fetch(model, progress: report)
+        }
+    }
+
+    @MainActor
+    private func fetch(_ model: LocalModel,
+                       progress: @escaping @Sendable (Double) -> Void) async throws -> URL {
         switch model {
         case .whisper(let id):
-            return try await download(id, progress: progress)
+            return try await fetchWhisper(id, progress: progress)
         case .parakeet(let id):
             guard let engine = ParakeetLoader.engine() else { throw ParakeetError.unavailable }
             let dir = parakeetDirectory(id)
             try FileManager.default.createDirectory(at: managedDirectory(), withIntermediateDirectories: true)
             try await engine.download(model: id.rawValue, to: dir.path, progress: progress)
+            guard ParakeetSupport.modelExists(id, in: dir) else { throw ModelInstallError.incomplete }
             return dir
         }
     }
 
-    public func download(_ id: WhisperModelID,
-                         progress: @escaping (Double) -> Void) async throws -> URL {
+    private func fetchWhisper(_ id: WhisperModelID,
+                              progress: @escaping @Sendable (Double) -> Void) async throws -> URL {
         try FileManager.default.createDirectory(at: managedDirectory(), withIntermediateDirectories: true)
         try FileManager.default.createDirectory(at: downloadCacheDirectory(), withIntermediateDirectories: true)
         let downloaded = try await WhisperKit.download(
@@ -126,12 +145,9 @@ public final class ModelManager {
             from: "argmaxinc/whisperkit-coreml",
             progressCallback: { p in progress(p.fractionCompleted) }
         )
-        let dst = managedDirectory().appendingPathComponent(id.rawValue)
-        if downloaded.path != dst.path {
-            try? FileManager.default.removeItem(at: dst)
-            try? FileManager.default.moveItem(at: downloaded, to: dst)
-            if !FileManager.default.fileExists(atPath: dst.path) { return downloaded }
-        }
-        return dst
+        // Checked before it replaces anything: a cut-off download never takes the place
+        // of a complete model.
+        return try ModelFolders.install(downloaded, at: managedDirectory().appendingPathComponent(id.rawValue),
+                                        isComplete: { WhisperSupport.modelExists(in: $0) })
     }
 }
