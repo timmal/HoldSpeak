@@ -19,16 +19,25 @@ public struct HotkeyBinding: Codable, Equatable {
     public static let rightOption  = modifier(deviceBits: 0x40)!
     public static let rightCommand = modifier(deviceBits: 0x10)!
 
-    private static let modifierTable: [(bit: UInt64, mods: UInt64, name: String)] = [
-        (0x01, 0x00040000, "Left Control"),
-        (0x2000, 0x00040000, "Right Control"),
-        (0x20, 0x00080000, "Left Option"),
-        (0x40, 0x00080000, "Right Option"),
-        (0x02, 0x00020000, "Left Shift"),
-        (0x04, 0x00020000, "Right Shift"),
-        (0x08, 0x00100000, "Left Command"),
-        (0x10, 0x00100000, "Right Command"),
+    private static let modifierTable: [(bit: UInt64, mods: UInt64, keyCode: UInt16, name: String)] = [
+        (0x01, 0x00040000, UInt16(kVK_Control), "Left Control"),
+        (0x2000, 0x00040000, UInt16(kVK_RightControl), "Right Control"),
+        (0x20, 0x00080000, UInt16(kVK_Option), "Left Option"),
+        (0x40, 0x00080000, UInt16(kVK_RightOption), "Right Option"),
+        (0x02, 0x00020000, UInt16(kVK_Shift), "Left Shift"),
+        (0x04, 0x00020000, UInt16(kVK_RightShift), "Right Shift"),
+        (0x08, 0x00100000, UInt16(kVK_Command), "Left Command"),
+        (0x10, 0x00100000, UInt16(kVK_RightCommand), "Right Command"),
     ]
+
+    /// Virtual key codes that must all be physically down for the binding to count as held:
+    /// the bound key for `.key`, one per device bit for `.modifier`. Computed, not stored.
+    public var physicalKeyCodes: [UInt16] {
+        switch kind {
+        case .key: return [keyCode]
+        case .modifier: return Self.modifierTable.filter { deviceBit & $0.bit != 0 }.map(\.keyCode)
+        }
+    }
 
     /// Create a `.modifier` binding from one or more device bits that must be held together.
     public static func modifier(deviceBits: UInt64) -> HotkeyBinding? {
@@ -45,6 +54,19 @@ public struct HotkeyBinding: Codable, Equatable {
         let name = keyLabel(keyCode)
         let modStr = modsLabel(mods)
         return .init(kind: .key, deviceBit: 0, keyCode: keyCode, mods: mods, label: modStr + name)
+    }
+
+    private static let fKeys: Set<Int> = [
+        kVK_F1, kVK_F2, kVK_F3, kVK_F4, kVK_F5, kVK_F6, kVK_F7, kVK_F8, kVK_F9, kVK_F10,
+        kVK_F11, kVK_F12, kVK_F13, kVK_F14, kVK_F15, kVK_F16, kVK_F17, kVK_F18, kVK_F19, kVK_F20,
+    ]
+
+    /// Whether a `.key` binding leaves ordinary typing alone: it needs ⌃, ⌥ or ⌘
+    /// (⇧ alone doesn't count), unless the key is F1–F20. A bound key is swallowed
+    /// system-wide, so a plain letter, Space or Return would go dead in every app.
+    public static func isAcceptableKey(keyCode: UInt16, mods: UInt64) -> Bool {
+        let ctrlOptCmd: UInt64 = 0x00040000 | 0x00080000 | 0x00100000
+        return mods & ctrlOptCmd != 0 || fKeys.contains(Int(keyCode))
     }
 
     private static func modsLabel(_ mods: UInt64) -> String {
