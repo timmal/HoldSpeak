@@ -1,9 +1,22 @@
 import SwiftUI
 
+/// The permission rows' state. AppDelegate refreshes it while the onboarding window is
+/// up (a 1 s timer and app activation), so the rows and Done follow System Settings
+/// without "Re-check".
+@MainActor
+final class OnboardingPermissions: ObservableObject {
+    @Published private(set) var current = PermissionsManager.shared.current()
+
+    func refresh() {
+        let now = PermissionsManager.shared.current()
+        if now != current { current = now }
+    }
+}
+
 struct OnboardingView: View {
     @ObservedObject var modelsVM: ModelsViewModel
+    @ObservedObject var permissions: OnboardingPermissions
     @ObservedObject private var prefs = PreferencesStore.shared
-    @State private var perms = PermissionsManager.shared.current()
     @State private var step: Step
     /// Parakeet first where it runs (macOS 14 on Apple Silicon), like the Model dropdown.
     @State private var choice: TranscriptionEngineKind = ParakeetSupport.isAvailable ? .parakeet : .whisper
@@ -13,11 +26,15 @@ struct OnboardingView: View {
 
     private enum Step { case engine, permissions }
 
+    private var perms: Permissions { permissions.current }
+
     init(modelsVM: ModelsViewModel,
+         permissions: OnboardingPermissions,
          needsEngine: Bool,
          onEngineChosen: @escaping (TranscriptionEngineKind) -> Void,
          onDone: @escaping () -> Void) {
         self.modelsVM = modelsVM
+        self.permissions = permissions
         self.onEngineChosen = onEngineChosen
         self.onDone = onDone
         _step = State(initialValue: needsEngine ? .engine : .permissions)
@@ -67,7 +84,7 @@ struct OnboardingView: View {
                 Spacer()
                 Button("Continue") {
                     onEngineChosen(choice)
-                    perms = PermissionsManager.shared.current()
+                    refresh()
                     if perms.allGranted { onDone() } else { step = .permissions }
                 }
                 .disabled(choice.cloudProvider.map { !prefs.hasAPIKey($0) } ?? false)
@@ -112,9 +129,14 @@ struct OnboardingView: View {
             Text("HoldSpeak needs a few permissions")
                 .font(.title2).bold()
             row("Microphone", ok: perms.microphone) {
-                Task {
-                    _ = await PermissionsManager.shared.requestMicrophone()
-                    refresh()
+                switch PermissionsManager.shared.microphoneAction {
+                case .prompt:
+                    Task {
+                        _ = await PermissionsManager.shared.requestMicrophone()
+                        refresh()
+                    }
+                case .openSettings:
+                    PermissionsManager.shared.openMicrophoneSettings()
                 }
             }
             row("Accessibility (global hotkey and text insertion)", ok: perms.accessibility) {
@@ -180,7 +202,7 @@ struct OnboardingView: View {
     }
 
     private func refresh() {
-        perms = PermissionsManager.shared.current()
+        permissions.refresh()
     }
 }
 

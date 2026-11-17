@@ -17,6 +17,46 @@ public struct Permissions: Equatable {
     }
 }
 
+/// Why a transcript was not typed, in the HUD's two short lines. Each case keeps
+/// the transcript in history.
+public enum NotTypedReason: Equatable {
+    case secureField
+    case noFocusedInput
+    /// Accessibility was revoked: the inserter can't see any focused field.
+    case accessibilityOff
+
+    /// The inserter's "no focus". Without Accessibility every insertion ends there, so
+    /// the HUD names that instead of the focused app.
+    public static func noFocus(accessibilityTrusted: Bool) -> NotTypedReason {
+        accessibilityTrusted ? .noFocusedInput : .accessibilityOff
+    }
+
+    public var title: String {
+        switch self {
+        case .secureField:      return "Skipped password field"
+        case .noFocusedInput:   return "No focused input"
+        case .accessibilityOff: return "Accessibility is off"
+        }
+    }
+
+    /// "Saved to history" doesn't fit next to the instruction for Accessibility.
+    public var detail: String {
+        switch self {
+        case .secureField, .noFocusedInput: return "Transcript saved to history"
+        case .accessibilityOff:             return "Turn HoldSpeak on in Privacy & Security → Accessibility"
+        }
+    }
+
+    /// SF Symbol name.
+    public var symbol: String {
+        switch self {
+        case .secureField:      return "lock.fill"
+        case .noFocusedInput:   return "text.cursor"
+        case .accessibilityOff: return "exclamationmark.triangle.fill"
+        }
+    }
+}
+
 public final class PermissionsManager {
     public static let shared = PermissionsManager()
     private init() {}
@@ -34,6 +74,25 @@ public final class PermissionsManager {
         await withCheckedContinuation { cont in
             AVCaptureDevice.requestAccess(for: .audio) { cont.resume(returning: $0) }
         }
+    }
+
+    /// What the onboarding Microphone row does when clicked.
+    public enum MicrophoneAction: Equatable { case prompt, openSettings }
+
+    /// macOS shows its prompt only while the choice is undecided; once denied (or
+    /// restricted), `requestAccess` answers false without a prompt, so the row has to
+    /// send the user to System Settings instead.
+    public static func microphoneAction(for status: AVAuthorizationStatus) -> MicrophoneAction {
+        status == .notDetermined ? .prompt : .openSettings
+    }
+
+    public var microphoneAction: MicrophoneAction {
+        Self.microphoneAction(for: AVCaptureDevice.authorizationStatus(for: .audio))
+    }
+
+    public func openMicrophoneSettings() {
+        let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone")!
+        NSWorkspace.shared.open(url)
     }
 
     public func openAccessibilitySettings() {

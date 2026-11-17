@@ -80,13 +80,21 @@ enum PrefsTab: String, CaseIterable, Identifiable {
     }
 }
 
+/// "Open Preferences on this tab". The serial changes with every request, so asking
+/// for the same tab again still switches an open window that has moved on since.
+struct PrefsTabRequest: Equatable {
+    let tab: PrefsTab
+    let serial: Int
+}
+
 struct PreferencesView: View {
     @ObservedObject var prefs = PreferencesStore.shared
     @ObservedObject var modelsVM: ModelsViewModel
     var historyStore: HistoryStoring
     var onClearHistory: () -> Void
     var onResetMetrics: () -> Void
-    var initialTab: PrefsTab = .general
+    /// Nil keeps the current tab (General in a new window).
+    var tabRequest: PrefsTabRequest?
 
     @Environment(\.colorScheme) private var scheme
     @State private var tab: PrefsTab = .general
@@ -112,8 +120,13 @@ struct PreferencesView: View {
         .modifier(PrefsWindowBackground())
         .preferredColorScheme(colorSchemeOverride)
         .onAppear {
-            tab = initialTab
+            if let tabRequest { tab = tabRequest.tab }
             if tab == .history { loadHistory() }
+        }
+        // An open window keeps this view (and its state) when the controller swaps the
+        // root view, so onAppear doesn't run again: follow new requests here.
+        .onChange(of: tabRequest) { request in
+            if let request { tab = request.tab }
         }
         .onChange(of: tab) { newTab in if newTab == .history { loadHistory() } }
         .onReceive(NotificationCenter.default.publisher(for: .historyDidChange)) { _ in
@@ -743,8 +756,9 @@ final class PreferencesWindowController: NSWindowController {
         if let host = window?.contentViewController as? NSHostingController<AnyView> {
             host.rootView = AnyView(view)
         }
+        // An open window stays where the user put it.
+        if window?.isVisible != true { window?.center() }
         showWindow(nil)
-        window?.center()
         NSApp.activate(ignoringOtherApps: true)
     }
 }
