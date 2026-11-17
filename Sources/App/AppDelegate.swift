@@ -2,7 +2,6 @@ import AppKit
 import AVFoundation
 import Combine
 import SwiftUI
-@preconcurrency import UserNotifications
 
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
@@ -23,6 +22,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var appliedPrimaryLanguage: PrimaryLanguage?
     private var appliedLocalModel: LocalModel?
     private var appliedEngine: TranscriptionEngineKind?
+    /// Counts holds; `recorderFailedTake` is the hold a recorder failure arrived during,
+    /// whose reason is already in the HUD.
+    private var take = 0
+    private var recorderFailedTake: Int?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
@@ -174,6 +177,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                       seconds: failure.displaySeconds)
     }
 
+    /// The text was transcribed and saved but not typed: told in the HUD pill, not a
+    /// notification, which the user may have denied.
+    private func showNotTyped(_ title: String, symbol: String) {
+        overlay.flash(AnyView(HUDMessageView(title: title, detail: "Transcript saved to history",
+                                             symbol: symbol, tint: .yellow)),
+                      anchor: menu.statusItemFrame, seconds: 4)
+    }
+
     private func loadModel(_ model: LocalModel) {
         Task {
             pttLog("Preloading model: \(model.shortLabel)")
@@ -251,20 +262,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             .sink { [weak self] error in
                 pttLog("Recorder failure: \(error)")
                 guard let self else { return }
-                if case AudioRecorderError.lidClosedNoMic = error {
-                    self.showFailure(.lidClosedNoMic)
-                    return
-                }
-                self.overlay.hide()
-                if case AudioRecorderError.stalled = error {
-                    self.notify("Microphone not responding", "Audio was reset — try again.")
-                }
+                self.recorderFailedTake = self.take
+                // Replaces the recording pill, and endRecording's hidePill leaves it up.
+                // The take's samples (none, or what came before a mid-take failure) are
+                // still drained by endRecording / cancelRecording when the hold ends.
+                self.showFailure(.recorder(error))
             }
             .store(in: &cancellables)
     }
 
     private func startRecording() {
         pttLog("startRecording")
+        take += 1
         recorder.start(input: PreferencesStore.shared.inputSelection)
         overlay.update(AnyView(hudView()))
         overlay.show(anchor: menu.statusItemFrame)
@@ -281,19 +290,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func endRecording() {
         pttLog("endRecording")
         overlay.hidePill()
+        let take = take
         recorder.stop { [weak self] in
             guard let self else { return }
             // Take the samples now, synchronously: the next recording's chunks can
             // arrive on main as soon as this completion returns.
             let samples = self.engine.takeSamples()
+            // The recorder failed this take and the HUD already says why;
+            // "No audio captured" would only replace that.
+            if samples.isEmpty, self.recorderFailedTake == take {
+                pttLog("endRecording: no samples after a recorder failure — nothing to transcribe")
+                return
+            }
             Task { @MainActor in
                 switch await self.coordinator.finishRecording(samples: samples) {
                 case .empty:
                     return
                 case .skippedSecureField:
-                    self.notify("Skipped password field", "Transcript saved to history.")
+                    self.showNotTyped("Skipped password field", symbol: "lock.fill")
                 case .noFocus:
-                    self.notify("No focused input", "Transcript saved to history.")
+                    self.showNotTyped("No focused input", symbol: "text.cursor")
                 case .inserted:
                     break
                 case .failed(let failure):
@@ -317,18 +333,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             pttLog("Migrated Application Support: push-to-talk → HoldSpeak")
         } catch {
             pttLog("Migration failed: \(error)")
-        }
-    }
-
-    private func notify(_ title: String, _ body: String) {
-        let content = UNMutableNotificationContent()
-        content.title = title
-        content.body = body
-        let req = UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil)
-        UNUserNotificationCenter.current().requestAuthorization(options: [.alert]) { granted, _ in
-            if granted {
-                UNUserNotificationCenter.current().add(req, withCompletionHandler: nil)
-            }
         }
     }
 }

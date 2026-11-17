@@ -113,7 +113,7 @@ final class ParakeetTranscriber {
             return .text(text, language: lang, durationMs: durationMs, engine: .parakeet)
         } catch {
             pttLog("finalize parakeet error: \(error)")
-            return .empty
+            return .failed(.engineFailed(.parakeet))
         }
     }
 }

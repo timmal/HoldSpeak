@@ -85,7 +85,7 @@ final class WhisperTranscriber {
             return .text(text, language: lang, durationMs: durationMs, engine: .whisper)
         } catch {
             pttLog("finalize error: \(error)")
-            return .empty
+            return .failed(.engineFailed(.whisper))
         }
     }
 

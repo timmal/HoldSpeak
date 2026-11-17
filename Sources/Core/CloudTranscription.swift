@@ -107,6 +107,18 @@ public enum TranscriptionFailure: Error, Equatable {
     case noMicSignal
     /// Nothing was recorded: see `InputRoute.lidClosedNoMic`.
     case lidClosedNoMic
+    /// The recorder found no input device at all (`AudioRecorderError.noInputDevice`).
+    case noInputDevice
+    /// The input device couldn't be opened or gave an unusable format
+    /// (`AudioRecorderError.coreAudio`, `.invalidInputFormat`).
+    case micCouldNotStart
+    /// A CoreAudio call hung and the capture was rebuilt (`AudioRecorderError.stalled`).
+    case micStalled
+    /// A local engine (Whisper, Parakeet) threw while transcribing; the error is in the log.
+    case engineFailed(TranscriptionEngineKind)
+    /// A hold past the tap threshold delivered no samples at all: the mic never started
+    /// (e.g. a Continuity or Bluetooth mic still waking up).
+    case noAudioCaptured
 
     /// Both lines are shown in the HUD pill, so keep them short.
     public var title: String {
@@ -126,6 +138,11 @@ public enum TranscriptionFailure: Error, Equatable {
         case .backupDownloading(let failure, _): return failure.title
         case .noMicSignal:           return "Microphone gave no signal"
         case .lidClosedNoMic:        return "Lid closed · built-in mic is off"
+        case .noInputDevice:         return "No microphone found"
+        case .micCouldNotStart:      return "Microphone couldn't start"
+        case .micStalled:            return "Microphone not responding"
+        case .engineFailed(let kind): return "\(Self.engineName(kind)) couldn't transcribe"
+        case .noAudioCaptured:       return "No audio captured"
         }
     }
 
@@ -152,6 +169,11 @@ public enum TranscriptionFailure: Error, Equatable {
         case .backupDownloading(_, let backup): return "Downloading \(backup) as a backup…"
         case .noMicSignal:          return "Check the input in Preferences → Audio"
         case .lidClosedNoMic:       return "Connect a wired mic"
+        case .noInputDevice:        return "Connect one, or pick one in Preferences → Audio"
+        case .micCouldNotStart:     return "Try again, or pick another in Preferences → Audio"
+        case .micStalled:           return "Audio was reset — try again"
+        case .engineFailed:         return "Try again; details are in the log"
+        case .noAudioCaptured:      return "The mic didn't start in time — try again"
         }
     }
 
@@ -173,6 +195,26 @@ public enum TranscriptionFailure: Error, Equatable {
     public static func transport(_ error: Error, provider: CloudProvider) -> TranscriptionFailure {
         if let urlError = error as? URLError, urlError.code == .timedOut { return .timedOut(provider) }
         return .unreachable(provider)
+    }
+
+    private static func engineName(_ kind: TranscriptionEngineKind) -> String {
+        switch kind {
+        case .whisper:  return "Whisper"
+        case .parakeet: return "Parakeet"
+        case .gemini:   return CloudProvider.gemini.name
+        case .openai:   return CloudProvider.openai.name
+        }
+    }
+
+    /// What the HUD says when the recorder reports `error` on its `failures` stream.
+    public static func recorder(_ error: Error) -> TranscriptionFailure {
+        guard let error = error as? AudioRecorderError else { return .micCouldNotStart }
+        switch error {
+        case .lidClosedNoMic:                   return .lidClosedNoMic
+        case .noInputDevice:                    return .noInputDevice
+        case .invalidInputFormat, .coreAudio:   return .micCouldNotStart
+        case .stalled:                          return .micStalled
+        }
     }
 
     /// How long the HUD keeps the message up.
