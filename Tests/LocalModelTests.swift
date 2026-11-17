@@ -79,9 +79,25 @@ final class LocalModelTests: XCTestCase {
         XCTAssertEqual(LocalModel.supported(.openai, parakeetAvailable: false), .openai)
     }
 
-    /// FluidAudio keeps Ultra in `<models>/parakeet-ultra` (Repo.folderName strips "-coreml").
-    func test_ultraFolderMatchesFluidAudio() {
+    /// The raw value is persisted: it is the saved `parakeetModel` setting and the
+    /// folder existing downloads live in. Renaming it orphans both.
+    func test_parakeetRawValue_isPersisted() {
+        XCTAssertEqual(ParakeetModelID(rawValue: "parakeet-ultra"), .ultra)
         XCTAssertEqual(ParakeetModelID.ultra.folderName, "parakeet-ultra")
+    }
+
+    /// The app hands the raw value to the FluidAudio bridge, which maps it with a
+    /// string switch. The bridge isn't part of this package, so check its source:
+    /// a model missing there fails at runtime with "Unknown Parakeet model".
+    func test_everyParakeetModel_hasABridgeCase() throws {
+        let bridge = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent("Sources/Parakeet/ParakeetBridge.swift")
+        let source = try String(contentsOf: bridge, encoding: .utf8)
+        for model in ParakeetModelID.allCases {
+            XCTAssertTrue(source.contains("case \"\(model.rawValue)\":"),
+                          "ParakeetBridge.version(_:) has no case for \(model.rawValue)")
+        }
     }
 
     func test_modelExists_needsEveryFile() throws {
