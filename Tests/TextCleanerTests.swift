@@ -31,6 +31,61 @@ final class TextCleanerTests: XCTestCase {
         XCTAssertEqual(TextCleaner.clean("I like pizza"), "I like pizza.")
     }
 
+    // MARK: - Repeat rules must stop at a word boundary (HS-30)
+
+    /// What every engine gets: the cleaner with the Whisper-only filter off.
+    private func cleaned(_ text: String) -> String {
+        TextCleaner.clean(text, dropHallucinations: false)
+    }
+
+    func test_repeat_keepsWordTheNextWordStartsWith_russian() {
+        XCTAssertEqual(cleaned("Напиши ему по поводу релиза"), "Напиши ему по поводу релиза.")
+        XCTAssertEqual(cleaned("я не негодую"), "Я не негодую.")
+        XCTAssertEqual(cleaned("на наш сервер"), "На наш сервер.")
+        XCTAssertEqual(cleaned("Возьми с собой ноутбук"), "Возьми с собой ноутбук.")
+        XCTAssertEqual(cleaned("и идем дальше"), "И идем дальше.")
+    }
+    func test_repeat_keepsWordTheNextWordStartsWith_english() {
+        XCTAssertEqual(cleaned("We need to go to Google today"), "We need to go to Google today.")
+        XCTAssertEqual(cleaned("I am so sorry, we were late"), "I am so sorry, we were late.")
+    }
+    func test_repeat_keepsWordBeforeHyphenatedWordStartingWithIt() {
+        XCTAssertEqual(cleaned("я знал, что что-то не так"), "Я знал, что что-то не так.")
+        XCTAssertEqual(cleaned("мы все все-таки пришли"), "Мы все все-таки пришли.")
+        // Engines also emit the typographic hyphens.
+        let nonBreakingHyphen = String(UnicodeScalar(0x2011)!)
+        XCTAssertEqual(cleaned("что что\(nonBreakingHyphen)то не так"), "Что что\(nonBreakingHyphen)то не так.")
+    }
+    func test_repeat_multiWordPhraseStopsAtWordBoundary() {
+        XCTAssertEqual(cleaned("это на это направлено"), "Это на это направлено.")
+    }
+    func test_repeat_tripleWordRuleStopsAtWordBoundary() {
+        // Three real "я" collapse, the "я" that opens "явно" is not a fourth one.
+        XCTAssertEqual(cleaned("я я я явно вижу"), "Я явно вижу.")
+        XCTAssertEqual(cleaned("что что что что-то не так"), "Что что-то не так.")
+    }
+    func test_repeat_keepsDigitOnlyRepeats() {
+        XCTAssertEqual(cleaned("Позвони на 8 800 555 35 35"), "Позвони на 8 800 555 35 35.")
+        XCTAssertEqual(cleaned("12 12 34"), "12 12 34.")
+        XCTAssertEqual(cleaned("код 5 5 5"), "Код 5 5 5.")
+        XCTAssertEqual(cleaned("12 34 12 34"), "12 34 12 34.")
+        XCTAssertEqual(cleaned("35. 35."), "35. 35.")
+    }
+    func test_repeat_stillCollapsesRealStutter() {
+        XCTAssertEqual(cleaned("тест тест проверка"), "Тест проверка.")
+        XCTAssertEqual(cleaned("тест тест тест проверка"), "Тест проверка.")
+        XCTAssertEqual(cleaned("я думаю я думаю что да"), "Я думаю что да.")
+        XCTAssertEqual(cleaned("Привет. Привет. Как дела?"), "Привет. Как дела?")
+        XCTAssertEqual(cleaned("the the cat"), "The cat.")
+        // A phrase with a number in it is still a phrase.
+        XCTAssertEqual(cleaned("версия 2 версия 2 готова"), "Версия 2 готова.")
+        XCTAssertEqual(cleaned("35 раз 35 раз подряд"), "35 раз подряд.")
+    }
+    func test_repeat_legitimateDoubleWordStillCollapsed() {
+        // Known limitation, kept on purpose: a separate product decision.
+        XCTAssertEqual(cleaned("that that is true"), "That is true.")
+    }
+
     // MARK: - Terminology canonicalization
 
     private var dict: [TerminologyEntry] {

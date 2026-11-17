@@ -12,6 +12,17 @@ public enum TextCleaner {
         }
     }
 
+    /// Where a repeat has to end to count as one: not inside a longer word
+    /// ("по поводу", "8 800") and not at the head of a hyphenated one ("что что-то").
+    private static let repeatEnd = #"(?![\p{L}\p{N}]|[-\x{2010}\x{2011}][\p{L}\p{N}])"#
+
+    /// One to five words, at least one of them with a letter. Runs of bare
+    /// numbers are data (phone and card numbers, "12 12 34"), never a stutter.
+    /// Spelled out per count of leading number-only words to keep the five-word cap.
+    private static let repeatablePhrase: String = (0...4).map { leadingNumbers in
+        #"(?:\p{N}+\s+){\#(leadingNumbers)}\p{N}*\p{L}[\p{L}\p{N}]*(?:\s+[\p{L}\p{N}]+){0,\#(4 - leadingNumbers)}"#
+    }.joined(separator: "|")
+
     /// Compiled once; NSRegularExpression is safe to share across threads.
     private static let rules: [Rule] = [
         // Whisper "sound event" annotations: [музыка], [music], (applause), etc.
@@ -21,10 +32,10 @@ public enum TextCleaner {
         Rule(pattern: #"\b(э{3,}|м{3,}|эм{2,}|um{2,}|uh{2,}|uhm+)\b"#,
              replacement: "", options: [.caseInsensitive]),
         // Consecutive identical word repeated 3+ times (Whisper stutter)
-        Rule(pattern: #"\b(\w+)(\s+\1){2,}\b"#,
+        Rule(pattern: #"\b(?!\p{N}+\b)(\w+)(\s+\1){2,}\b"# + repeatEnd,
              replacement: "$1", options: [.caseInsensitive]),
         // Consecutive identical short phrase (up to 5 words) repeated 2+ times.
-        Rule(pattern: #"(\b[\p{L}\p{N}]+(?:\s+[\p{L}\p{N}]+){0,4}[.!?]?)(\s+\1){1,}"#,
+        Rule(pattern: #"(\b(?:"# + repeatablePhrase + #")[.!?]?)(\s+\1"# + repeatEnd + #"){1,}"#,
              replacement: "$1", options: [.caseInsensitive]),
         // Collapse whitespace
         Rule(pattern: #"\s+"#, replacement: " ", options: []),
