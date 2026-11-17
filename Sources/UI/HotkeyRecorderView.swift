@@ -4,9 +4,12 @@ import Carbon.HIToolbox
 
 struct HotkeyRecorderView: View {
     @ObservedObject var prefs = PreferencesStore.shared
+    @Environment(\.colorScheme) private var scheme
     @State private var recording = false
     @State private var monitor: Any?
     @State private var pressedBits: UInt64 = 0
+    /// Shown after a press that can't be a hotkey; recording continues.
+    @State private var hint: String?
     private static let deviceMask: UInt64 = 0x207F
 
     var body: some View {
@@ -20,6 +23,18 @@ struct HotkeyRecorderView: View {
                             tint: recording ? Color.accentColor.opacity(0.3) : nil)
             Button(recording ? "Cancel" : "Change") { toggle() }
         }
+        // Drawn under the field without taking layout space, so the rows below don't jump.
+        .overlay(alignment: .bottomLeading) {
+            if let hint {
+                Text(hint)
+                    .font(.system(size: 11))
+                    .foregroundColor(PTT.textSoft(scheme))
+                    .fixedSize()
+                    .padding(.leading, 10)
+                    .offset(y: 16)
+                    .allowsHitTesting(false)
+            }
+        }
         .onDisappear { stop() }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didResignActiveNotification)) { _ in
             if recording { stop() }
@@ -32,6 +47,7 @@ struct HotkeyRecorderView: View {
 
     private func start() {
         recording = true
+        hint = nil
         HotkeyMonitor.isPaused = true
         pressedBits = 0
         // Some chords (e.g. Ctrl+`) never reach the app as NSEvents but are visible to the
@@ -65,6 +81,7 @@ struct HotkeyRecorderView: View {
         if let m = monitor { NSEvent.removeMonitor(m) }
         monitor = nil
         recording = false
+        hint = nil
         HotkeyMonitor.isPaused = false
         HotkeyMonitor.recorderKeyDown = nil
     }
@@ -76,7 +93,15 @@ struct HotkeyRecorderView: View {
                 stop()
                 return nil
             }
-            return .key(keyCode: keyCode, mods: flags & HotkeyBinding.allGeneralMods)
+            let mods = flags & HotkeyBinding.allGeneralMods
+            // A plain key would be swallowed in every app; keep recording instead.
+            guard HotkeyBinding.isAcceptableKey(keyCode: keyCode, mods: mods) else {
+                hint = "Add ⌃, ⌥ or ⌘, or use an F-key"
+                // The modifier held for this press (e.g. ⇧) must not commit on release.
+                pressedBits = 0
+                return nil
+            }
+            return .key(keyCode: keyCode, mods: mods)
         } else {
             // Collect every modifier pressed; commit once all are released.
             let current = flags & Self.deviceMask
