@@ -3,7 +3,16 @@ import Foundation
 /// Serialises all file writes. pttLog is called from the audio tap thread,
 /// the main thread and background tasks, so the handle is only ever touched here.
 private let logQueue = DispatchQueue(label: "com.timmal.holdspeak.log", qos: .utility)
-private let logPath = ("~/Library/Logs/HoldSpeak.log" as NSString).expandingTildeInPath
+
+/// XCTest is loaded into the test runner, never into the app; checked without importing it.
+private let runningUnderXCTest = NSClassFromString("XCTestCase") != nil
+    || ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
+
+/// ~/Library/Logs/HoldSpeak.log; a file in the temp directory under the unit tests,
+/// which would otherwise write their lines into the user's log.
+let logPath: String = runningUnderXCTest
+    ? (NSTemporaryDirectory() as NSString).appendingPathComponent("HoldSpeak-tests.log")
+    : ("~/Library/Logs/HoldSpeak.log" as NSString).expandingTildeInPath
 private let logMaxBytes: UInt64 = 2 * 1024 * 1024
 /// Opened lazily on logQueue; nil until the first write (or after a failed open).
 private var logHandle: FileHandle?
@@ -44,12 +53,39 @@ private func rotateLog() {
     try? fm.moveItem(atPath: logPath, toPath: rotated)
 }
 
-/// Dictated text for log lines: quoted in Debug builds, only its length in Release
-/// so the log file never holds what the user said.
+/// Deletes the log from before the rename, `PushToTalk.log` and its rotated `.1`, in
+/// `directory` (~/Library/Logs). Old builds wrote transcripts into it in clear text,
+/// and nothing else ever removes it. Returns the names removed.
+@discardableResult
+public func removeLegacyLogs(in directory: URL) -> [String] {
+    let fm = FileManager.default
+    return ["PushToTalk.log", "PushToTalk.log.1"].filter { name in
+        let url = directory.appendingPathComponent(name)
+        guard fm.fileExists(atPath: url.path) else { return false }
+        do {
+            try fm.removeItem(at: url)
+            return true
+        } catch {
+            pttLog("Couldn't remove the old log \(name): \(error)")
+            return false
+        }
+    }
+}
+
+/// Whether log lines may quote dictated text. Off in every build, Debug included
+/// (scripts/rebuild.sh installs a Debug build as the everyday app). To debug text
+/// handling, turn it on and relaunch:
+///     defaults write com.timmal.push-to-talk debugLogTranscripts -bool YES
+/// and off again with `defaults delete com.timmal.push-to-talk debugLogTranscripts`.
+/// Read once per run, on the first line that logs text.
+private let logTranscripts = UserDefaults.standard.bool(forKey: "debugLogTranscripts")
+
+/// Dictated text for log lines: only its length, so the log file never holds what
+/// the user said, unless `debugLogTranscripts` is set.
 public func logText(_ text: String) -> String {
-    #if DEBUG
-    return "\"\(text)\""
-    #else
-    return "<\(text.count) chars>"
-    #endif
+    logText(text, verbatim: logTranscripts)
+}
+
+func logText(_ text: String, verbatim: Bool) -> String {
+    verbatim ? "\"\(text)\"" : "<\(text.count) chars>"
 }

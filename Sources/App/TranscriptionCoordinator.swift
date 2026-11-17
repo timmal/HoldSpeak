@@ -1,7 +1,7 @@
 import Foundation
 
 /// Runs the post-recording pipeline: finalize → clean → insert → persist.
-/// UI reactions (notifications, popover refresh) stay in AppDelegate.
+/// UI reactions (HUD messages, popover refresh) stay in AppDelegate.
 @MainActor
 final class TranscriptionCoordinator {
     enum Outcome {
@@ -92,7 +92,7 @@ final class TranscriptionCoordinator {
             // Blind typing isn't confirmed by AX, so history doesn't claim it landed.
             inserted: insertion == .inserted
         )
-        // The text is already typed, so there's nothing to show; just leave a trace.
+        // A failed history write isn't shown in the HUD; just leave a trace.
         // GRDB errors carry the SQL with placeholders, never the bound values.
         do {
             _ = try store.append(record)
@@ -103,7 +103,7 @@ final class TranscriptionCoordinator {
         switch insertion {
         case .inserted:          return .inserted
         // Shown like an insertion: the text most likely landed, and a "No focused input"
-        // notification would be wrong more often than not.
+        // HUD message would be wrong more often than not.
         case .typedBlind:        return .inserted
         case .skippedSecureField: return .skippedSecureField
         case .noFocus:           return .noFocus

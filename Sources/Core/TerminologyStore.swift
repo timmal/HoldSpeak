@@ -102,7 +102,20 @@ private struct LenientRow: Decodable {
 public final class TerminologyStore: ObservableObject {
     public enum MergeStrategy { case skipExisting, replaceAll }
 
-    public static let shared = TerminologyStore()
+    /// Starts on `launchLanguage` and remembers the active language in the standard defaults.
+    public static let shared: TerminologyStore = {
+        let defaults = UserDefaults.standard
+        let language = launchLanguage(
+            primary: PreferencesStore.shared.primaryLanguage.whisperCode,
+            persisted: defaults.string(forKey: activeLanguageKey),
+            preferredLanguages: Locale.preferredLanguages,
+            available: bundledLanguages(in: .main, prefix: "terminology-default"))
+        return TerminologyStore(initialLanguage: language, languageDefaults: defaults)
+    }()
+
+    /// The active language, kept so that Auto starts on it next launch: engines that
+    /// don't report a language (Gemini, gpt-4o-mini-transcribe) never switch it.
+    public nonisolated static let activeLanguageKey = "terminologyLanguage"
 
     @Published public private(set) var entries: [TerminologyEntry] = []
     @Published public private(set) var activeLanguage: String
@@ -114,18 +127,48 @@ public final class TerminologyStore: ObservableObject {
     private let directory: URL
     private let bundle: Bundle
     private let defaultsBundlePrefix: String
+    /// Where the active language is remembered; nil remembers nothing.
+    private let languageDefaults: UserDefaults?
 
     public init(directory: URL = TerminologyStore.defaultDirectory(),
                 bundle: Bundle = .main,
                 defaultsBundlePrefix: String = "terminology-default",
                 legacyFlatFile: URL? = TerminologyStore.legacyFlatFile(),
-                initialLanguage: String = "ru") {
+                initialLanguage: String = "en",
+                languageDefaults: UserDefaults? = nil) {
         self.directory = directory
         self.bundle = bundle
         self.defaultsBundlePrefix = defaultsBundlePrefix
         self.activeLanguage = initialLanguage
+        self.languageDefaults = languageDefaults
         bootstrap(legacyFlatFile: legacyFlatFile)
         loadActive()
+        rememberActiveLanguage()
+    }
+
+    /// The language the store starts on. An explicit primary language wins. On Auto:
+    /// the language active when the app last ran; on a first launch, the first of the
+    /// Mac's preferred languages that has a bundled list ("uk-UA" counts as "uk"); else English.
+    public nonisolated static func launchLanguage(primary: String?, persisted: String?,
+                                                  preferredLanguages: [String],
+                                                  available: [String]) -> String {
+        if let primary, !primary.isEmpty { return primary }
+        if let persisted, !persisted.isEmpty { return persisted }
+        for preferred in preferredLanguages {
+            let code = preferred.split(whereSeparator: { $0 == "-" || $0 == "_" }).first
+                .map { $0.lowercased() } ?? ""
+            if available.contains(code) { return code }
+        }
+        return "en"
+    }
+
+    /// Languages with a `<prefix>-<lang>.json` list in the bundle, sorted.
+    public nonisolated static func bundledLanguages(in bundle: Bundle, prefix: String) -> [String] {
+        (bundle.urls(forResourcesWithExtension: "json", subdirectory: nil) ?? [])
+            .map { $0.deletingPathExtension().lastPathComponent }
+            .filter { $0.hasPrefix(prefix + "-") }
+            .map { String($0.dropFirst(prefix.count + 1)) }
+            .sorted()
     }
 
     public nonisolated static func defaultDirectory() -> URL {
@@ -168,6 +211,11 @@ public final class TerminologyStore: ObservableObject {
         guard !code.isEmpty, code != activeLanguage else { return }
         activeLanguage = code
         loadActive()
+        rememberActiveLanguage()
+    }
+
+    private func rememberActiveLanguage() {
+        languageDefaults?.set(activeLanguage, forKey: Self.activeLanguageKey)
     }
 
     public func entries(for language: String) -> [TerminologyEntry] {
