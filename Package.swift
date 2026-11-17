@@ -8,8 +8,7 @@ let package = Package(
         .library(name: "HoldSpeakCore", targets: ["HoldSpeakCore"]),
     ],
     dependencies: [
-        .package(url: "https://github.com/groue/GRDB.swift", from: "6.0.0"),
-        .package(url: "https://github.com/argmaxinc/WhisperKit", from: "0.9.0"),
+        .package(url: "https://github.com/groue/GRDB.swift", exact: "6.29.3"),
     ],
     targets: [
         .target(

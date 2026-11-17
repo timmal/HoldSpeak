@@ -8,10 +8,10 @@ options:
 packages:
   GRDB:
     url: https://github.com/groue/GRDB.swift
-    from: 6.0.0
+    exactVersion: 6.29.3
   WhisperKit:
     url: https://github.com/argmaxinc/WhisperKit
-    from: 0.9.0
+    exactVersion: 0.18.0
   # Parakeet (local engine). Needs macOS 14, so only HoldSpeakParakeet links it.
   FluidAudio:
     url: https://github.com/FluidInference/FluidAudio
