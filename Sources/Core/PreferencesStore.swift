@@ -158,7 +158,9 @@ public final class PreferencesStore: ObservableObject {
     @AppStorage("openAIModel")     public var openAIModel: OpenAIModelID = .transcribe
     /// Empty until the user picks an engine in onboarding.
     @AppStorage("transcriptionEngine") private var engineRaw: String = ""
-    @AppStorage("primaryLanguage") public var primaryLanguage: PrimaryLanguage = .ru
+    /// Installs from before HS-37 had `.ru` as the default; `migratePrimaryLanguageDefault`
+    /// stores it for them, so only new installs start on auto-detect.
+    @AppStorage("primaryLanguage") public var primaryLanguage: PrimaryLanguage = PreferencesStore.defaultPrimaryLanguage
     @AppStorage("launchAtLogin")   public var launchAtLogin: Bool = false
     @AppStorage("appTheme")        public var appTheme: AppTheme = .auto
     @AppStorage("autoPunctuation") public var autoPunctuation: Bool = true
@@ -212,65 +214,46 @@ public final class PreferencesStore: ObservableObject {
         }
     }
 
-    /// All cloud keys live in one Keychain item: the app is self-signed, so macOS asks
-    /// for the password once per item after every update, and one item means one prompt.
-    private static let keysAccount = "api-keys"
-    /// One item per provider, before the keys were merged.
-    private static func legacyKeyAccount(_ provider: CloudProvider) -> String {
-        "\(provider.rawValue)-api-key"
-    }
-    /// Read once from the Keychain, then served from memory: finalize asks on every dictation.
-    private var cachedKeys: [String: String]?
+    /// Cloud API keys, one Keychain item for all providers (see APIKeyStore).
+    private let apiKeys = APIKeyStore(keychain: SystemKeychain())
 
-    private func storedKeys() -> [String: String] {
-        if let cachedKeys { return cachedKeys }
-        var keys: [String: String] = [:]
-        if let json = Keychain.string(for: Self.keysAccount),
-           let decoded = try? JSONDecoder().decode([String: String].self, from: Data(json.utf8)) {
-            keys = decoded
-        } else {
-            for provider in CloudProvider.allCases {
-                if let key = Keychain.string(for: Self.legacyKeyAccount(provider)), !key.isEmpty {
-                    keys[provider.rawValue] = key
-                }
-            }
-            if !keys.isEmpty, saveKeys(keys) {
-                CloudProvider.allCases.forEach { Keychain.delete(Self.legacyKeyAccount($0)) }
-                pttLog("Keychain: merged \(keys.count) API key(s) into one item")
-            }
-        }
-        cachedKeys = keys
-        return keys
-    }
-
-    @discardableResult
-    private func saveKeys(_ keys: [String: String]) -> Bool {
-        if keys.isEmpty {
-            Keychain.delete(Self.keysAccount)
-            return true
-        }
-        guard let data = try? JSONEncoder().encode(keys) else { return false }
-        return Keychain.set(String(decoding: data, as: UTF8.self), for: Self.keysAccount)
-    }
-
+    /// nil when there is no key, or when Keychain access was denied (`apiKeysUnavailable`).
     public func apiKey(_ provider: CloudProvider) -> String? {
-        storedKeys()[provider.rawValue]
+        apiKeys.key(provider)
     }
 
-    /// nil or empty removes the key.
-    public func setAPIKey(_ key: String?, for provider: CloudProvider) {
+    /// nil or empty removes the key. False when nothing was saved.
+    @discardableResult
+    public func setAPIKey(_ key: String?, for provider: CloudProvider) -> Bool {
         objectWillChange.send()
-        var keys = storedKeys()
-        if let key, !key.isEmpty {
-            keys[provider.rawValue] = key
-        } else {
-            keys[provider.rawValue] = nil
-        }
-        saveKeys(keys)
-        cachedKeys = keys
+        return apiKeys.setKey(key, for: provider)
     }
 
     public func hasAPIKey(_ provider: CloudProvider) -> Bool { apiKey(provider)?.isEmpty == false }
+
+    public var apiKeyAvailability: APIKeyStore.Availability { apiKeys.availability }
+
+    /// The Keychain read failed (password prompt denied or cancelled): no key is
+    /// served or saved until `reloadAPIKeys()` succeeds.
+    public var apiKeysUnavailable: Bool { apiKeyAvailability == .unavailable }
+
+    /// Reads the API keys off the main thread, so the password prompt macOS shows after
+    /// an update doesn't stall the main run loop (and the hotkey event tap on it) inside
+    /// the first `apiKey` call. Observers are notified on main when it's done. Does
+    /// nothing once the keys are loaded, and doesn't prompt again after a denied read.
+    public func warmAPIKeys() {
+        apiKeys.loadInBackground(retry: false) { [weak self] _ in
+            self?.objectWillChange.send()
+        }
+    }
+
+    /// Asks the Keychain again after a denied prompt, off the main thread.
+    public func reloadAPIKeys() {
+        apiKeys.loadInBackground(retry: true) { [weak self] _ in
+            self?.objectWillChange.send()
+        }
+        objectWillChange.send()
+    }
 
     public func applyAppearance() {
         NSApp.appearance = appTheme.nsAppearance
@@ -320,10 +303,64 @@ public final class PreferencesStore: ObservableObject {
         return raw
     }
 
+    public static let defaultPrimaryLanguage: PrimaryLanguage = .auto
+    /// Set once the primary-language migration has looked at this install.
+    static let primaryLanguageCheckedKey = "primaryLanguageDefaultChecked"
+    /// Keys only a previous launch could have stored: every setting the app has saved
+    /// through @AppStorage, plus the pre-HotkeyBinding "hotkey". @AppStorage writes a
+    /// key only when it's changed, so these catch installs whose user touched anything.
+    static let installMarkerKeys = [
+        "transcriptionEngine", "localEngine", "hotkeyBindingJSON", "hotkey", "holdThresholdMs",
+        "hudPosition", "modelID", "parakeetModel", "geminiModel", "openAIModel", "launchAtLogin",
+        "appTheme", "autoPunctuation", "autoCapitalize", "removeFillers", "engineFallback",
+        "fillerWords", "metricsResetAtMs", "inputDevice",
+    ]
+
+    /// The language `primaryLanguage` reads from these defaults.
+    static func effectivePrimaryLanguage(_ defaults: UserDefaults) -> PrimaryLanguage {
+        defaults.string(forKey: "primaryLanguage").flatMap(PrimaryLanguage.init(rawValue:))
+            ?? defaultPrimaryLanguage
+    }
+
+    /// The default primary language was Russian until HS-37 and is auto-detect now.
+    /// An install that ran before and never picked a language stored nothing, so it
+    /// gets "ru" written once to keep recognising exactly as it did. Runs once per
+    /// install (`primaryLanguageCheckedKey`): a new install creates history and picks an
+    /// engine on its first launch, and must not look "existing" on the second.
+    ///
+    /// An install counts as existing when it has any of `installMarkerKeys`, or
+    /// `hasExistingHistory`: the history database, created on every launch since the
+    /// first version, so it also covers installs from before the engine-choice
+    /// onboarding whose settings were never touched (no defaults key at all). The
+    /// caller checks it before anything creates the database on this launch.
+    /// Returns true when "ru" was written.
+    @discardableResult
+    public static func migratePrimaryLanguageDefault(_ defaults: UserDefaults, hasExistingHistory: Bool) -> Bool {
+        guard !defaults.bool(forKey: primaryLanguageCheckedKey) else { return false }
+        defaults.set(true, forKey: primaryLanguageCheckedKey)
+        guard defaults.object(forKey: "primaryLanguage") == nil else { return false }
+        let existing = hasExistingHistory || installMarkerKeys.contains { defaults.object(forKey: $0) != nil }
+        guard existing else { return false }
+        defaults.set(PrimaryLanguage.ru.rawValue, forKey: "primaryLanguage")
+        return true
+    }
+
+    /// history.sqlite in Application Support, or in its folder from before the rename
+    /// (AppDelegate moves "push-to-talk" to "HoldSpeak" after this runs).
+    private static func historyDatabaseExists() -> Bool {
+        let fm = FileManager.default
+        let legacy = fm.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("push-to-talk/history.sqlite")
+        return fm.fileExists(atPath: HistoryStore.defaultURL().path) || fm.fileExists(atPath: legacy.path)
+    }
+
     public static let shared = PreferencesStore()
     private init() {
         if let removed = Self.migrateLegacyDefaults(.standard) {
             pttLog("Prefs: Whisper model \(removed) is no longer offered, switched to \(WhisperModelID.turbo.rawValue)")
+        }
+        if Self.migratePrimaryLanguageDefault(.standard, hasExistingHistory: Self.historyDatabaseExists()) {
+            pttLog("Prefs: existing install without a language choice, keeping Russian")
         }
     }
 }
