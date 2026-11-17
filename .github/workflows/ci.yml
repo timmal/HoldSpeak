@@ -54,6 +54,13 @@ jobs:
       - name: Generate Xcode project
         run: xcodegen generate
 
+      # Same dependency versions as a release: the tracked lock file, and a stale
+      # one fails the build instead of being re-resolved (see scripts/release.sh).
+      - name: Use the tracked dependency lock file
+        run: |
+          mkdir -p HoldSpeak.xcodeproj/project.xcworkspace/xcshareddata/swiftpm
+          cp Xcode.resolved HoldSpeak.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved
+
       - name: Build app (Debug, unsigned)
         run: |
           xcodebuild \
@@ -61,5 +68,6 @@ jobs:
             -scheme HoldSpeak \
             -configuration Debug \
             -derivedDataPath ./build \
+            -onlyUsePackageVersionsFromResolvedFile \
             CODE_SIGNING_ALLOWED=NO \
             build

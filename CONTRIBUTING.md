@@ -24,6 +24,8 @@ xcodebuild -project HoldSpeak.xcodeproj -scheme HoldSpeak -configuration Debug \
 
 Or open `HoldSpeak.xcodeproj` in Xcode after `xcodegen generate` and run the `HoldSpeak` scheme. Re-run `xcodegen generate` whenever you add, remove or rename files, or change `project.yml`. `Resources/Info.plist` and `Resources/HoldSpeak.entitlements` are written by XcodeGen from `project.yml` — change them there, not by hand.
 
+The scripts and CI build with the dependency versions pinned in the tracked `Xcode.resolved`; to do the same by hand, after `xcodegen generate` run `mkdir -p HoldSpeak.xcodeproj/project.xcworkspace/xcshareddata/swiftpm && cp Xcode.resolved HoldSpeak.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved` and add `-onlyUsePackageVersionsFromResolvedFile` to the `xcodebuild` line.
+
 **What `swift test` covers.** `Package.swift` builds only `Sources/Core` and `Sources/ObjCCatch` and runs the XCTest suite in `Tests/`. It does **not** compile `Sources/App`, `Sources/UI`, `Sources/Whisper`, `Sources/Parakeet` or `Sources/ParakeetShared` — those build only through the generated Xcode project. A change can pass `swift test` and still break the app, so run the `xcodebuild` line above too. CI runs both on every pull request (`.github/workflows/ci.yml`), unsigned.
 
 ## Running your build: `scripts/rebuild.sh`
