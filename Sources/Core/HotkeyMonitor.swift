@@ -36,9 +36,6 @@ public final class HotkeyMonitor {
     static let chordWindowMs: Double = 600
     private static let ownPID = Int64(getpid())
 
-    /// Written to `.eventSourceUserData` of events we replay, so the tap lets them through.
-    static let replayMarker: Int64 = 0x4853_5250_4C59 // "HSRPLY"
-
     /// Injectable for tests.
     var now: () -> Date = Date.init
     var isBindingPhysicallyDown: (HotkeyBinding) -> Bool = HotkeyMonitor.hidKeysDown
@@ -82,7 +79,7 @@ public final class HotkeyMonitor {
                     this.pollTick()
                     return Unmanaged.passUnretained(event)
                 }
-                if this.handle(event: event, type: type) {
+                if this.handle(event: event, type: type, binding: this.prefs.hotkey) {
                     return nil
                 }
                 return Unmanaged.passUnretained(event)
@@ -111,9 +108,10 @@ public final class HotkeyMonitor {
     }
 
     /// Returns true if the event should be consumed (dropped).
-    private func handle(event: CGEvent, type: CGEventType) -> Bool {
-        // Our own replay of a short tap: it is for the focused app.
-        if Self.isReplayed(event) { return false }
+    func handle(event: CGEvent, type: CGEventType, binding: HotkeyBinding) -> Bool {
+        // Our own typing (dictated text) or a replayed tap: it is for the focused app
+        // and must never start, end or cancel a hold, whatever the binding.
+        if SyntheticEvent.isOurs(event) { return false }
         if Self.isPaused {
             // A hold in progress when capture began would never see its release.
             suppressUntilRelease = false
@@ -126,7 +124,6 @@ public final class HotkeyMonitor {
             }
             return false
         }
-        let binding = prefs.hotkey
         switch binding.kind {
         case .modifier:
             if type == .flagsChanged { handleModifier(event: event, binding: binding) }
@@ -158,7 +155,8 @@ public final class HotkeyMonitor {
     func handleModifierKeyDown(event: CGEvent) {
         guard let startedAt = holdStartedAt, holdBinding?.kind == .modifier else { return }
         // Our own typing of the previous dictation, or a replayed tap, is not a chord.
-        guard !Self.isReplayed(event),
+        // Two independent checks: the marker, and the source pid.
+        guard !SyntheticEvent.isOurs(event),
               event.getIntegerValueField(.eventSourceUnixProcessID) != Self.ownPID else { return }
         guard now().timeIntervalSince(startedAt) * 1000.0 < Self.chordWindowMs else { return }
         pttLog("HotkeyMonitor: hotkey used in a key chord — discarding hold")
@@ -187,16 +185,12 @@ public final class HotkeyMonitor {
             let tapDown = swallowedKeyDown
             if endOrCancel() == .cancelHold, let down = tapDown, let up = event.copy() {
                 // A tap, not a dictation: give the key to the focused app after all.
-                down.setIntegerValueField(.eventSourceUserData, value: Self.replayMarker)
-                up.setIntegerValueField(.eventSourceUserData, value: Self.replayMarker)
+                SyntheticEvent.mark(down)
+                SyntheticEvent.mark(up)
                 replayTap(down, up)
             }
             return true
         }
-    }
-
-    static func isReplayed(_ event: CGEvent) -> Bool {
-        event.getIntegerValueField(.eventSourceUserData) == replayMarker
     }
 
     private static func post(_ down: CGEvent, _ up: CGEvent) {

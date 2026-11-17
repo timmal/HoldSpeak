@@ -206,6 +206,9 @@ public enum TextInserter {
         // Virtual key 0 is "A": inherited Fn from the hotkey would make it Fn+A (Show Dock).
         down?.flags = []
         up?.flags = []
+        // So the hotkey tap ignores our typing (e.g. a take-2 hold started mid-insert).
+        if let down { SyntheticEvent.mark(down) }
+        if let up { SyntheticEvent.mark(up) }
         let utf16 = Array(text.utf16)
         utf16.withUnsafeBufferPointer { buf in
             down?.keyboardSetUnicodeString(stringLength: buf.count, unicodeString: buf.baseAddress)

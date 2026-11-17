@@ -193,8 +193,8 @@ final class HotkeyMonitorTests: XCTestCase {
         XCTAssertEqual(keyCode(up), kVK_Space)
         XCTAssertTrue(down.flags.contains(.maskAlternate))
         XCTAssertTrue(up.flags.contains(.maskAlternate))
-        XCTAssertTrue(HotkeyMonitor.isReplayed(down))
-        XCTAssertTrue(HotkeyMonitor.isReplayed(up))
+        XCTAssertTrue(SyntheticEvent.isOurs(down))
+        XCTAssertTrue(SyntheticEvent.isOurs(up))
     }
 
     func test_realHold_doesNotReplay() {
@@ -232,10 +232,6 @@ final class HotkeyMonitorTests: XCTestCase {
         rig.monitor.pollTick()
         XCTAssertEqual(rig.events, [.startHold, .cancelHold])
         XCTAssertTrue(rig.replayed.isEmpty)
-    }
-
-    func test_isReplayed_onlyForMarkedEvents() {
-        XCTAssertFalse(HotkeyMonitor.isReplayed(key(kVK_Space, down: true)))
     }
 
     // MARK: - Modifier hotkey used in a chord
@@ -307,13 +303,66 @@ final class HotkeyMonitorTests: XCTestCase {
         XCTAssertEqual(rig.events, [.startHold])
     }
 
-    func test_replayedKeyDown_doesNothing() {
+    func test_markedKeyDown_insideChordWindow_doesNotCancel_evenWithForeignPid() {
+        // The marker alone must hold even if the pid field doesn't survive post(tap:).
         let rig = Rig()
         rig.monitor.handleModifier(event: flagsEvent(rightOptDown), binding: .rightOption)
-        let replay = foreignKeyDown(kVK_Space)
-        replay.setIntegerValueField(.eventSourceUserData, value: HotkeyMonitor.replayMarker)
-        rig.monitor.handleModifierKeyDown(event: replay)
+        rig.advance(ms: 100)
+        let typed = foreignKeyDown(kVK_ANSI_A)
+        SyntheticEvent.mark(typed)
+        rig.monitor.handleModifierKeyDown(event: typed)
+        XCTAssertFalse(rig.monitor.handle(event: typed, type: .keyDown, binding: .rightOption))
         XCTAssertEqual(rig.events, [.startHold])
+        rig.advance(ms: 1000)
+        rig.monitor.handleModifier(event: flagsEvent(noMods), binding: .rightOption)
+        XCTAssertEqual(rig.events, [.startHold, .endHold])
+    }
+
+    // MARK: - Our own typing vs. a key binding
+
+    /// Shaped like `TextInserter.type`: virtual key 0, no flags, marked.
+    private func typedText(down: Bool) -> CGEvent {
+        let e = key(kVK_ANSI_A, down: down)
+        e.setIntegerValueField(.eventSourceUnixProcessID, value: 0)
+        SyntheticEvent.mark(e)
+        return e
+    }
+
+    func test_markedKeyEvent_matchingKeyBinding_isNotSwallowed_andStartsNoHold() {
+        let rig = Rig()
+        let marked = foreignKeyDown(kVK_Space, flags: .maskAlternate)
+        SyntheticEvent.mark(marked)
+        XCTAssertFalse(rig.monitor.handle(event: marked, type: .keyDown, binding: optSpace))
+        let markedUp = key(kVK_Space, down: false, flags: .maskAlternate)
+        SyntheticEvent.mark(markedUp)
+        XCTAssertFalse(rig.monitor.handle(event: markedUp, type: .keyUp, binding: optSpace))
+        XCTAssertTrue(rig.events.isEmpty)
+        XCTAssertTrue(rig.replayed.isEmpty)
+    }
+
+    func test_typedText_duringKeyHold_isNotSwallowed_andDoesNotEndIt() {
+        // ⌃A bound (key code 0, same as the inserter's events): take 2 is being held
+        // while take 1 is typed.
+        let rig = Rig()
+        let ctrlA = HotkeyBinding.key(keyCode: UInt16(kVK_ANSI_A), mods: 0x00040000)
+        let real = foreignKeyDown(kVK_ANSI_A, flags: .maskControl)
+        XCTAssertTrue(rig.monitor.handle(event: real, type: .keyDown, binding: ctrlA))
+        rig.advance(ms: 300)
+        XCTAssertFalse(rig.monitor.handle(event: typedText(down: true), type: .keyDown, binding: ctrlA))
+        XCTAssertFalse(rig.monitor.handle(event: typedText(down: false), type: .keyUp, binding: ctrlA))
+        XCTAssertEqual(rig.events, [.startHold], "typing must not end the hold")
+        rig.advance(ms: 1000)
+        XCTAssertTrue(rig.monitor.handle(event: key(kVK_ANSI_A, down: false, flags: .maskControl),
+                                         type: .keyUp, binding: ctrlA))
+        XCTAssertEqual(rig.events, [.startHold, .endHold])
+    }
+
+    func test_syntheticEventMarker() {
+        let e = key(kVK_Space, down: true)
+        XCTAssertFalse(SyntheticEvent.isOurs(e))
+        SyntheticEvent.mark(e)
+        XCTAssertTrue(SyntheticEvent.isOurs(e))
+        XCTAssertEqual(e.getIntegerValueField(.eventSourceUserData), SyntheticEvent.marker)
     }
 
     func test_keyDownWithoutHold_doesNothing() {
