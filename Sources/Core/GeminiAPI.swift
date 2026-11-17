@@ -97,6 +97,35 @@ public enum GeminiAPI {
         }.joined()
     }
 
+    /// Candidate `finishReason`s that mean the answer was withheld rather than finished.
+    static let blockingFinishReasons: Set<String> = [
+        "SAFETY", "RECITATION", "BLOCKLIST", "PROHIBITED_CONTENT", "SPII", "IMAGE_SAFETY",
+    ]
+
+    /// Why an HTTP 200 carries no transcript, if it was blocked: the prompt itself
+    /// (`promptFeedback.blockReason`, no candidates) or the first candidate's `finishReason`.
+    /// Nil for a normal stop, such as silence.
+    public static func blockReason(_ data: Data) -> String? {
+        guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
+        if let reason = (json["promptFeedback"] as? [String: Any])?["blockReason"] as? String,
+           reason != "BLOCK_REASON_UNSPECIFIED" {
+            return reason
+        }
+        let finish = (json["candidates"] as? [[String: Any]])?.first?["finishReason"] as? String
+        return finish.flatMap { blockingFinishReasons.contains($0) ? $0 : nil }
+    }
+
+    /// The transcript of an HTTP 200. Empty means silence; throws `.blocked` when the
+    /// text is missing because Gemini withheld it. Text that did come back is kept.
+    public static func transcript(_ data: Data) throws -> String {
+        let text = extractText(data)
+        if text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, let reason = blockReason(data) {
+            pttLog("gemini response blocked: \(reason)")
+            throw TranscriptionFailure.blocked(.gemini)
+        }
+        return text
+    }
+
     /// Momentary overload ("model is experiencing high demand"). A 429 is not
     /// retried: when the daily quota is gone a retry only burns time.
     public static func isRetryable(status: Int) -> Bool { status >= 500 }
@@ -113,7 +142,14 @@ public enum GeminiAPI {
             if reasons.contains("API_KEY_INVALID") || message.contains("API key not valid") {
                 return .invalidAPIKey(.gemini)
             }
+            // "Request payload size exceeds the limit: 20971520 bytes." Not the model's
+            // fault: the sibling model would refuse it too.
+            if message.contains("payload size exceeds") {
+                return .audioTooLong(.gemini)
+            }
             return .serviceError(.gemini, status: status)
+        case 413:
+            return .audioTooLong(.gemini)
         case 429:
             let quotaIDs = details
                 .flatMap { $0["violations"] as? [[String: Any]] ?? [] }
@@ -138,14 +174,20 @@ public struct GeminiClient {
         self.session = session
     }
 
-    /// Throws `TranscriptionFailure`.
-    public func transcribe(wav: Data, model: GeminiModelID, prompt: String, apiKey: String) async throws -> String {
+    /// Throws `TranscriptionFailure`. `durationMs` is the length of the audio in `wav`.
+    public func transcribe(wav: Data, model: GeminiModelID, prompt: String, apiKey: String,
+                           durationMs: Int) async throws -> String {
         var request = URLRequest(url: GeminiAPI.baseURL.appendingPathComponent("models/\(model.rawValue):generateContent"))
         request.httpMethod = "POST"
-        request.timeoutInterval = 20
+        request.timeoutInterval = CloudLimits.requestTimeout(durationMs: durationMs)
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue(apiKey, forHTTPHeaderField: "x-goog-api-key")
-        request.httpBody = try GeminiAPI.requestBody(model: model, prompt: prompt, wav: wav)
+        let body = try GeminiAPI.requestBody(model: model, prompt: prompt, wav: wav)
+        guard body.count <= CloudLimits.maxUploadBytes(.gemini) else {
+            pttLog("gemini request too large: \(body.count) bytes, not sent")
+            throw TranscriptionFailure.audioTooLong(.gemini)
+        }
+        request.httpBody = body
 
         for attempt in 0..<2 {
             let data: Data
@@ -153,12 +195,12 @@ public struct GeminiClient {
             do {
                 (data, response) = try await session.data(for: request)
             } catch {
-                pttLog("gemini request failed: \(error)")
-                throw TranscriptionFailure.unreachable(.gemini)
+                pttLog("gemini request failed: \(LogRedaction.apiKeys("\(error)"))")
+                throw TranscriptionFailure.transport(error, provider: .gemini)
             }
             let status = (response as? HTTPURLResponse)?.statusCode ?? 0
-            if status == 200 { return GeminiAPI.extractText(data) }
-            pttLog("gemini HTTP \(status): \(String(decoding: data.prefix(300), as: UTF8.self))")
+            if status == 200 { return try GeminiAPI.transcript(data) }
+            pttLog("gemini HTTP \(status): \(LogRedaction.apiKeys(String(decoding: data.prefix(300), as: UTF8.self)))")
             guard attempt == 0, GeminiAPI.isRetryable(status: status) else {
                 throw GeminiAPI.failure(status: status, body: data)
             }
