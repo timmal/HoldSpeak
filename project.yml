@@ -29,9 +29,14 @@ settings:
     Debug:
       CODE_SIGNING_REQUIRED: NO
       CODE_SIGNING_ALLOWED: YES
+    # Release ships with the hardened runtime; scripts/release.sh re-signs with
+    # --options runtime and Resources/HoldSpeak.entitlements. No injected
+    # get-task-allow: a release must not be attachable by a debugger.
     Release:
       CODE_SIGNING_REQUIRED: NO
       CODE_SIGNING_ALLOWED: YES
+      ENABLE_HARDENED_RUNTIME: YES
+      CODE_SIGN_INJECT_BASE_ENTITLEMENTS: NO
 
 targets:
   HoldSpeak:
@@ -79,10 +84,15 @@ targets:
         CFBundleVersion: "1"
         NSMicrophoneUsageDescription: HoldSpeak records your speech while you hold the hotkey and turns it into text.
         NSHumanReadableCopyright: ""
+    # Release signature entitlements (scripts/release.sh signs with this file).
+    # audio-input: under the hardened runtime the microphone yields silence without it.
+    # disable-library-validation: the self-signed identity has no Team ID, so library
+    # validation would refuse to load the app's own HoldSpeakParakeet.framework.
     entitlements:
       path: Resources/HoldSpeak.entitlements
       properties:
         com.apple.security.app-sandbox: false
+        com.apple.security.cs.disable-library-validation: true
         com.apple.security.device.audio-input: true
     settings:
       base:

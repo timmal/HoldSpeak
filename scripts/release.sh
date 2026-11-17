@@ -39,6 +39,9 @@ fi
 if ! command -v xcodegen >/dev/null 2>&1; then
   die "xcodegen not found. brew install xcodegen"
 fi
+if [[ ! -f Xcode.resolved ]]; then
+  die "Xcode.resolved (the tracked dependency lock file) is missing from the repo root."
+fi
 
 BRANCH="$(git symbolic-ref --short -q HEAD || true)"
 if [[ "$BRANCH" != "main" ]]; then
@@ -157,6 +160,21 @@ BUMP_PENDING=1
 
 xcodegen generate >/dev/null
 
+# Dependency lock file. The Package.resolved that xcodebuild honours lives inside
+# the generated, git-ignored HoldSpeak.xcodeproj, so the tracked copy is
+# Xcode.resolved at the repo root; it is put in place after every xcodegen run and
+# the build uses -onlyUsePackageVersionsFromResolvedFile, so a lock file that no
+# longer matches project.yml fails the build instead of being silently re-resolved.
+# To bump a dependency on purpose:
+#   1. change the version in project.yml (packages:) and run `xcodegen generate`;
+#   2. xcodebuild -resolvePackageDependencies -project HoldSpeak.xcodeproj -scheme HoldSpeak
+#      (WITHOUT -onlyUsePackageVersionsFromResolvedFile);
+#   3. cp HoldSpeak.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved Xcode.resolved
+#   4. commit project.yml and Xcode.resolved together.
+STAGE="dependency lock file"
+mkdir -p HoldSpeak.xcodeproj/project.xcworkspace/xcshareddata/swiftpm
+cp Xcode.resolved HoldSpeak.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved
+
 STAGE="build"
 if pkill -x HoldSpeak 2>/dev/null; then
   APP_KILLED=1
@@ -166,15 +184,41 @@ rm -rf build dist 2>/dev/null || true
 rm -rf build dist 2>/dev/null || true
 mkdir -p build dist
 xcodebuild -scheme HoldSpeak -configuration Release \
-  -derivedDataPath build clean build 2>&1 | tail -5
+  -derivedDataPath build -onlyUsePackageVersionsFromResolvedFile \
+  clean build 2>&1 | tail -5
 
 APP_SRC="build/Build/Products/Release/HoldSpeak.app"
 mkdir -p dist
 cp -R "$APP_SRC" "dist/HoldSpeak.app"
 
 # No ad-hoc fallback: the identity was verified in the preflight.
+# Hardened runtime + entitlements, signed inside-out rather than with --deep
+# (deprecated for signing since macOS 13; codesign(1) applies all signing options
+# to nested code). Nested code (HoldSpeakParakeet.framework, any dylib) gets the
+# runtime flag but no entitlements; only the app's main executable carries them.
+# The designated requirement (identifier + certificate leaf) is unchanged, so TCC
+# grants survive.
 STAGE="code signing"
-codesign --force --deep --sign "$IDENTITY" "dist/HoldSpeak.app"
+APP="dist/HoldSpeak.app"
+ENTITLEMENTS="Resources/HoldSpeak.entitlements"
+NESTED_BUNDLES="$(find "$APP/Contents" -mindepth 1 \( -name '*.app' -o -name '*.appex' -o -name '*.xpc' -o -name '*.systemextension' \) -print)"
+if [[ -n "$NESTED_BUNDLES" ]]; then
+  die "nested executable bundle(s) found; give them their own signing step with their own entitlements: $NESTED_BUNDLES"
+fi
+# -depth lists children before their parents, i.e. inside-out.
+while IFS= read -r -d '' NESTED; do
+  codesign --force --options runtime --sign "$IDENTITY" "$NESTED"
+done < <(find "$APP/Contents" -depth \( -name '*.framework' -o -name '*.dylib' \) -print0)
+codesign --force --options runtime --entitlements "$ENTITLEMENTS" --sign "$IDENTITY" "$APP"
+
+if ! codesign --verify --deep --strict --verbose=2 "$APP"; then
+  die "codesign --verify --deep --strict failed on $APP"
+fi
+APP_ENTITLEMENTS="$(codesign -d --entitlements - --xml "$APP" 2>/dev/null)"
+if grep -q 'get-task-allow' <<<"$APP_ENTITLEMENTS"; then
+  die "the release signature carries com.apple.security.get-task-allow"
+fi
+codesign -d -r- "$APP" 2>&1 | grep designated || true
 
 # Build DMG
 STAGE="DMG"

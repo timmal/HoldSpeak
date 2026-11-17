@@ -7,12 +7,16 @@ if command -v xcodegen >/dev/null 2>&1; then
   xcodegen generate >/dev/null
 fi
 
+# Tracked dependency lock file (see the comment in scripts/release.sh on how to bump).
+mkdir -p HoldSpeak.xcodeproj/project.xcworkspace/xcshareddata/swiftpm
+cp Xcode.resolved HoldSpeak.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved
+
 # Kill running instance
 pkill -x HoldSpeak 2>/dev/null || true
 
 # Build
 xcodebuild -scheme HoldSpeak -configuration Debug \
-  -derivedDataPath build \
+  -derivedDataPath build -onlyUsePackageVersionsFromResolvedFile \
   clean build 2>&1 | tail -5
 
 APP_SRC="build/Build/Products/Debug/HoldSpeak.app"
