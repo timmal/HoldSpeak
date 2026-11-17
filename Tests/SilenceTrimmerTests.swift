@@ -189,6 +189,100 @@ final class SilenceTrimmerTests: XCTestCase {
         XCTAssertNotNil(vad.trimSilence(input))
     }
 
+    // MARK: - One loud transient (HS-36)
+
+    /// Built-in mic room noise, rms ≈ 0.005.
+    private func roomNoise(ms: Int, seed: UInt64 = 51) -> [Float] {
+        noise(ms: ms, amplitude: 0.005 * Float(3).squareRoot(), seed: seed)
+    }
+
+    /// Quiet speech, rms ≈ 0.03: well above the gate's speech threshold
+    /// (min(4 × 0.005, 0.02) = 0.02), about ten times below a click.
+    private func quietSpeech(ms: Int) -> [Float] {
+        tone(ms: ms, amplitude: 0.03 * Float(2).squareRoot())
+    }
+
+    /// A 40 ms click at rms ≈ 0.35 (the hotkey next to the built-in mic, a cough),
+    /// added at `atMs`; window-aligned so it spans 2 windows, short of a voiced run.
+    /// Its peak puts `relative * peak` (0.035) above every speech window.
+    private func addClick(_ input: inout [Float], atMs: Int, seed: UInt64 = 52) {
+        for (i, v) in noise(ms: 40, amplitude: 0.35 * Float(3).squareRoot(), seed: seed).enumerated() {
+            input[atMs * 16 + i] += v
+        }
+    }
+
+    /// 800 ms room noise, 2500 ms quiet speech, 800 ms room noise.
+    private let speechStartMs = 800, speechEndMs = 3300, clipMs = 4100
+
+    private func quietSpeechWithClick(atMs: Int?) -> [Float] {
+        var input = mix(roomNoise(ms: clipMs),
+                        silence(ms: speechStartMs) + quietSpeech(ms: speechEndMs - speechStartMs)
+                            + silence(ms: clipMs - speechEndMs))
+        if let atMs { addClick(&input, atMs: atMs) }
+        return input
+    }
+
+    /// Where `out` starts in `input`, in ms (trimSilence returns a window-aligned slice).
+    private func offsetMs(of out: [Float], in input: [Float]) -> Int? {
+        stride(from: 0, through: input.count - out.count, by: vad.windowSamples)
+            .first { input[$0 ..< $0 + out.count].elementsEqual(out) }
+            .map { $0 / 16 }
+    }
+
+    /// The take must survive and hold the whole speech span; `expected`, if given,
+    /// is the span ± 250 ms padding, widened to reach the click.
+    private func assertKeepsSpeech(_ input: [Float], expectedMs: ClosedRange<Int>? = nil,
+                                   file: StaticString = #filePath, line: UInt = #line) {
+        guard let out = vad.trimSilence(input) else {
+            return XCTFail("dropped: \(vad.stats(input))", file: file, line: line)
+        }
+        guard let start = offsetMs(of: out, in: input) else {
+            return XCTFail("output is not a slice of the input", file: file, line: line)
+        }
+        let end = start + out.count / 16
+        XCTAssertLessThanOrEqual(start, speechStartMs, "starts at \(start) ms", file: file, line: line)
+        XCTAssertGreaterThanOrEqual(end, speechEndMs, "ends at \(end) ms", file: file, line: line)
+        guard let expectedMs else { return }
+        XCTAssertEqual(start, expectedMs.lowerBound, accuracy: 30, file: file, line: line)
+        XCTAssertEqual(end, expectedMs.upperBound, accuracy: 30, file: file, line: line)
+    }
+
+    /// Baseline: `relative * peak` (0.003) is below the room noise, so the whole clip is kept.
+    func test_quietSpeechWithoutClickIsKept() {
+        assertKeepsSpeech(quietSpeechWithClick(atMs: nil))
+    }
+
+    func test_clickAtStartDoesNotDropQuietSpeech() {
+        assertKeepsSpeech(quietSpeechWithClick(atMs: 30), expectedMs: 0 ... speechEndMs + 250)
+    }
+
+    func test_clickInMiddleDoesNotDropQuietSpeech() {
+        assertKeepsSpeech(quietSpeechWithClick(atMs: 2040),
+                          expectedMs: speechStartMs - 250 ... speechEndMs + 250)
+    }
+
+    func test_clickAtEndDoesNotDropQuietSpeech() {
+        assertKeepsSpeech(quietSpeechWithClick(atMs: clipMs - 80),
+                          expectedMs: speechStartMs - 250 ... clipMs)
+    }
+
+    func test_loudClickAloneInRoomNoiseReturnsNil() {
+        for atMs in [30, 2040, clipMs - 80] {
+            var input = roomNoise(ms: clipMs)
+            addClick(&input, atMs: atMs)
+            XCTAssertNil(vad.trimSilence(input), "click at \(atMs) ms: \(vad.stats(input))")
+        }
+    }
+
+    /// Loud speech with ordinary pauses: leading/trailing room noise is still cut to the padding.
+    func test_loudSpeechWithPausesTrimsToPadding() {
+        let speech = tone(ms: 600) + silence(ms: 300) + tone(ms: 500) + silence(ms: 200) + tone(ms: 400)
+        let input = mix(roomNoise(ms: 4000), silence(ms: 1000) + speech + silence(ms: 1000))
+        guard let out = vad.trimSilence(input) else { return XCTFail("dropped: \(vad.stats(input))") }
+        XCTAssertEqual(offsetMs(of: out, in: input) ?? -1, 1000 - 250, accuracy: 30)
+        XCTAssertEqual(out.count / 16, 2000 + 2 * 250, accuracy: 60)
+    }
+
     private func XCTAssertEqual(_ a: Int, _ b: Int, accuracy: Int,
                                 file: StaticString = #filePath, line: UInt = #line) {
         XCTAssertLessThanOrEqual(abs(a - b), accuracy, "\(a) != \(b) ± \(accuracy)",
