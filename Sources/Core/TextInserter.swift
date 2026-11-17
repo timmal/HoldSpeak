@@ -63,7 +63,11 @@ public enum InsertionPolicy {
         switch f.focus {
         case .element(let role, let subrole):
             // Cocoa and Chromium password fields are AXTextField with this subrole.
-            return role == secureRole || subrole == secureRole ? .skipSecureField : .typeIntoFocused
+            if role == secureRole || subrole == secureRole { return .skipSecureField }
+            // Nothing readable about the element (e.g. both reads timed out): trust secure
+            // input. A readable non-secure role still wins, since some apps leave it on.
+            if role == nil, subrole == nil, f.secureInput { return .skipSecureField }
+            return .typeIntoFocused
         case .failed(.apiDisabled):
             return .noFocus
         case .failed:
@@ -159,7 +163,10 @@ public enum TextInserter {
                 type(text)
                 return .typedBlind
             case .skipSecureField:
-                pttLog("insert: secure field app=\(bundle) via=\(element == nil ? "secure input" : via)")
+                let skipVia = element == nil ? "secure input"
+                    : facts.focus == .element(role: nil, subrole: nil) ? "\(via), role unreadable, secure input"
+                    : via
+                pttLog("insert: secure field app=\(bundle) via=\(skipVia)")
                 return .skippedSecureField
             case .noFocus:
                 pttLog("insert: noFocus app=\(bundle) ax=\(axErrors.joined(separator: ",")) "

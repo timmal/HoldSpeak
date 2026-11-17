@@ -25,6 +25,15 @@ final class TextInserterDecisionTests: XCTestCase {
                        .skipSecureField)
     }
 
+    func test_unreadableElement_withSecureInput_isSkipped() {
+        let unreadable = InsertionFacts.Focus.element(role: nil, subrole: nil)
+        XCTAssertEqual(action(facts(focus: unreadable, app: native, secureInput: true)), .skipSecureField)
+        XCTAssertEqual(action(facts(focus: unreadable, app: native, secureInput: false)), .typeIntoFocused)
+        // A readable non-secure role wins over secure input; some apps leave it on.
+        XCTAssertEqual(action(facts(focus: .element(role: "AXTextField", subrole: nil), app: native, secureInput: true)),
+                       .typeIntoFocused)
+    }
+
     func test_notTrusted_isNoFocus_evenWithAnApp() {
         XCTAssertEqual(action(facts(trusted: false, focus: .failed(.apiDisabled), app: native)), .noFocus)
         XCTAssertEqual(action(facts(trusted: false, focus: .failed(.apiDisabled), app: electron)), .noFocus)
