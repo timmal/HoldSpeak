@@ -18,7 +18,7 @@ A free, local alternative to paid Whisper wrappers. Built for one reason: talkin
 
 - **Local transcription** — NVIDIA Parakeet Ultra through FluidAudio (Core ML, Neural Engine; macOS 14+ on Apple Silicon) or OpenAI Whisper Turbo through WhisperKit (Core ML)
 - **Optional cloud engines** — Google Gemini or OpenAI with your own API key, for higher accuracy on mixed-language speech and jargon
-- **Code-switching RU/EN/UK and more** — in auto mode the language is chosen only from the ones you have in System Settings → Language & Region
+- **Code-switching RU/EN/UK and more** — in auto mode Whisper picks the language only from the ones you have in System Settings → Language & Region
 - **Insertion without clipboard** — via `CGEventKeyboardSetUnicodeString`; password fields are skipped
 - **Menu bar popover** with recent transcriptions (click to copy) and metrics: dictations today / yesterday with the change vs. yesterday at the same time, and 7-day avg WPM with its change vs. a week ago
 - **HUD overlay** while you hold the key: dark pill with a live mic level; if a dictation fails (no model, bad API key, quota), the reason shows in the same pill
@@ -33,7 +33,7 @@ Requires a Mac with Apple Silicon (M1 or later) and macOS 13 or later.
 
 Grab the latest DMG from the [Releases page](https://github.com/timmal/HoldSpeak/releases/latest), open it, and drag `HoldSpeak.app` into `Applications`.
 
-Because the app is self-signed, macOS will block the first launch. Open **System Settings → Privacy & Security**, scroll to the message *"HoldSpeak was blocked…"* and click **Open Anyway**. Confirm with Touch ID / password. After that it launches normally from Launchpad / Applications. The app runs as a menu bar extra — look for the radio icon in the right side of your menu bar; it won't appear in the Dock or Cmd-Tab.
+Because the app is self-signed, macOS will block the first launch. Open **System Settings → Privacy & Security**, scroll to the message *"HoldSpeak was blocked…"* and click **Open Anyway**. Confirm with Touch ID / password. After that it launches normally from Launchpad / Applications. The app runs as a menu bar extra — look for the radio icon in the right side of your menu bar; it won't appear in the Dock or Cmd-Tab. If the icon is hidden (behind the notch, or by a menu bar manager), open HoldSpeak again from Applications or Spotlight: that brings up Preferences. A second copy started while one is running (say, straight from the DMG) quits by itself.
 
 On first launch, choose how speech is recognized — **NVIDIA Parakeet Ultra** (on this Mac, fastest, 25 European languages, ~610 MB download; macOS 14+ on Apple Silicon), **OpenAI Whisper Turbo** (on this Mac, 99 languages, slower, ~1.5 GB), **Gemini** (Google cloud) or **OpenAI** (cloud); the cloud engines ask for your API key — then grant three permissions:
 
@@ -63,24 +63,24 @@ Your preferences live in the app's defaults (`com.timmal.push-to-talk`); history
 
 Preferences → Audio → **Model** lists the models in two groups, best first in each:
 
-- **On this Mac — free, works offline:** **NVIDIA Parakeet Ultra** (fastest, 25 European languages, 610 MB; the default on macOS 14+, hidden on macOS 13) and **OpenAI Whisper Turbo** (large-v3 distilled, 99 languages, slower, 1.5 GB — the default on macOS 13).
+- **On this Mac — free, works offline:** **NVIDIA Parakeet Ultra** (fastest, 25 European languages, 610 MB; the default on macOS 14+, hidden on macOS 13) and **OpenAI Whisper Turbo** (WhisperKit's `openai_whisper-large-v3-v20240930`, 99 languages, slower, 1.5 GB — the default on macOS 13).
 - **Cloud — your API key, pay per use:** **OpenAI GPT Transcribe**, **OpenAI GPT-4o mini**, **Gemini 3.5 Transcribe**, **Gemini 3.5 Flash-Lite** — see below. Each item shows its price per hour of speech.
 
 <p align="center">
   <img src="docs/screenshots/preferences-models.webp?v=1" width="560" alt="Preferences · Audio · Model list" />
 </p>
 
-If you already have MacWhisper / another WhisperKit client installed, their Whisper models will be picked up automatically (models under `~/Documents/huggingface/` need the optional Documents permission), and so will a Parakeet model another FluidAudio app keeps in `~/Library/Application Support/FluidAudio/Models/`. Otherwise the model is downloaded to `~/Library/Application Support/HoldSpeak/models/` — Parakeet into its `parakeet-ultra` subfolder there.
+If you already have MacWhisper / another WhisperKit client installed, their Whisper models will be picked up automatically (models under `~/Documents/huggingface/` need the optional Documents permission), and so will a Parakeet model another FluidAudio app keeps in `~/Library/Application Support/FluidAudio/Models/`. Otherwise download it: onboarding starts the download for the engine you pick, and Preferences → Audio has **Download selected model** under the list; a progress bar shows while it runs. HoldSpeak doesn't download a model by itself at launch. The model goes to `~/Library/Application Support/HoldSpeak/models/` — Parakeet into its `parakeet-ultra` subfolder there. The status under the list says *Downloaded* or *Not downloaded*; a folder with files missing (an interrupted download) counts as not downloaded, so you can download it again.
 
-To free disk space, Preferences → Audio → **Downloaded models → Delete…** removes every model HoldSpeak downloaded. Models that belong to MacWhisper or other apps are left alone.
+To free disk space, Preferences → Audio → **Downloaded models → Delete…** removes HoldSpeak's `models` folder and its download cache (`hf-cache`) next to it — every model HoldSpeak downloaded. Models that belong to MacWhisper or other apps are left alone.
 
 ### Gemini (optional, cloud)
 
 Pick a Gemini model in Preferences → Audio → **Model** (or choose Gemini during onboarding) and paste an API key:
 
 1. Create a key at [Google AI Studio → API keys](https://aistudio.google.com/apikey).
-2. **Set up billing** for the key's project in AI Studio. Without billing the key runs on the free tier, which stops after a couple dozen dictations a day — HoldSpeak then shows *"Gemini daily limit reached — set up billing"* in the HUD.
-3. Paste the key in HoldSpeak and click **Save**. The key is checked with Google and stored in the macOS Keychain, never in preferences files; it survives app updates. After each update macOS asks once to let the new version read the key — enter your Mac password and click **Always Allow** (HoldSpeak is self-signed, so the Keychain sees every new build as a new app).
+2. **Set up billing** for the key's project in AI Studio. Without billing the key runs on the free tier, which stops after a couple dozen dictations a day — HoldSpeak then shows *"Gemini daily limit reached"* in the HUD.
+3. Paste the key in HoldSpeak and click **Save**. The key is checked with Google and stored in the macOS Keychain, never in preferences files; it survives app updates. After each update macOS asks once to let the new version read the key — enter your Mac password and click **Always Allow** (HoldSpeak is self-signed, so the Keychain sees every new build as a new app). If you deny it, the key field says *"Keychain access was denied"* and offers **Try again**; until access is allowed HoldSpeak can't use the saved keys, and a dictation shows *"No Gemini API key"*.
 
 <p align="center">
   <img src="docs/screenshots/preferences-audio-gemini.webp?v=6" width="560" alt="Preferences · Audio with Gemini selected" />
@@ -124,11 +124,11 @@ Privacy: with Gemini or OpenAI, each dictation's audio is sent to Google or Open
 
 ### Reducing insertion latency
 
-The delay between releasing the hotkey and text appearing in the input is dominated by the Whisper forward pass. Two levers:
+Most of the delay between releasing the hotkey and text appearing in the input is the model transcribing the recording ([measurements](docs/parakeet-vs-whisper.md)). Two levers:
 
 - **Pick a faster model.** Preferences → Audio → *Model*:
   - **NVIDIA Parakeet Ultra (610 MB)** — fastest local option (well under a second even for long dictations); detects the language itself. Default on macOS 14+ (Apple Silicon).
-  - **OpenAI Whisper Turbo (1.5 GB)** — default on macOS 13; 99 languages, but takes a couple of seconds per utterance.
+  - **OpenAI Whisper Turbo (1.5 GB)** — default on macOS 13; 99 languages, but takes about 2.5–3.5 s per dictation, however short.
 - **Set a fixed language** instead of Auto (Whisper). Preferences → Audio → *Primary language*: picking Russian or English skips an extra language-detection forward pass that Auto mode runs before transcription.
 
 Whisper Tiny and Small are no longer offered: if you had one selected, HoldSpeak switches to OpenAI Whisper Turbo. Their downloaded files stay in the models folder until you delete them with **Downloaded models → Delete…**.
@@ -137,12 +137,28 @@ Whisper Tiny and Small are no longer offered: if you had one selected, HoldSpeak
 
 1. Hold **Right Option** (or whatever you set in Preferences).
 2. Speak. A HUD appears at the bottom center of the screen (or under the menu bar icon — configurable) showing the mic level.
-3. Release the key. After ~1–2 s the text is inserted into the focused field.
+3. Release the key. The text is inserted into the focused field — with NVIDIA Parakeet Ultra in well under a second, with OpenAI Whisper Turbo after about 2.5–3.5 s, with a cloud engine once the provider answers.
 4. If the field lost focus — open the menu bar icon: it shows the recent transcriptions; click to copy.
+
+### Choosing the hotkey
+
+Preferences → General → **Hotkey** → **Change**, then press what you want to hold:
+
+- **Modifiers** — one, or several held together (Right Option, Left Control + Left Option, …). The choice is saved when you let go of all of them; left and right keys count separately.
+- **A key** — with ⌃, ⌥ or ⌘ (⇧ alone isn't enough), e.g. ⌥Space or ⌃`, or an F-key (F1–F20) on its own. A plain letter, Space or Return isn't accepted: while it is the hotkey, other apps don't get that key.
+
+Esc cancels.
 
 ### Short taps
 
-By default, presses shorter than **150 ms** don't start recording — the key behaves as a normal Option. The threshold is configurable in Preferences → General (50–800 ms).
+By default, presses shorter than **150 ms** aren't dictations: the recording is dropped and the key keeps its normal job — a modifier works as usual, and a short tap of a key hotkey (F13, ⌥Space) is passed on to the app you're in. The threshold is configurable in Preferences → General (50–800 ms).
+
+A few more holds are dropped instead of transcribed:
+
+- With a modifier hotkey, pressing another key within 0.6 s of the modifier going down (⌥←, a character typed with Option) makes it a shortcut, not a dictation.
+- A hold longer than 10 minutes.
+
+If macOS loses the key release (the screen locks or a password dialog takes the keyboard mid-hold), HoldSpeak notices the key is up and ends the take as usual.
 
 ## Preferences
 
@@ -167,13 +183,15 @@ Preferences → Audio → **Remove filler words** (off by default) cleans up the
 
 ### Auto language detection
 
+Preferences → Audio → **Primary language** is **Auto-detect** on a new install. An install that ran on the earlier Russian default and never changed it stays on Russian.
+
 In Auto mode the app reads `Locale.preferredLanguages` from the system and restricts Whisper to those languages only. So if macOS has RU, EN, UK enabled, Whisper will pick among them and won't drift into, say, Bulgarian.
 
 When two of your preferred languages score close in detection (e.g. a sentence mixes Russian with English terms), the app drops the forced language for that utterance and lets Whisper switch per-segment — this tends to preserve English terms verbatim instead of transliterating them.
 
 ### Terminology dictionary
 
-Whisper reliably recognizes common speech but routinely mangles IT terminology in mixed RU+EN dictation (`пулл реквест` instead of `pull request`, `кубернетес` instead of `Kubernetes`, and so on). The **Terms** tab lets you map your spoken variants to a single canonical form, which is then substituted in the transcript before it's inserted. Each Primary language keeps its own set of terms — in Auto mode the active set follows the detected language of the current utterance, so Russian-heavy speech uses your Russian dictionary and English-heavy speech uses the English one.
+Whisper reliably recognizes common speech but routinely mangles IT terminology in mixed RU+EN dictation (`пулл реквест` instead of `pull request`, `кубернетес` instead of `Kubernetes`, and so on). The **Terms** tab lets you map your spoken variants to a single canonical form, which is then substituted in the transcript before it's inserted. Each Primary language keeps its own set of terms — in Auto mode the active set follows the detected language of the current utterance, so Russian-heavy speech uses your Russian dictionary and English-heavy speech uses the English one. Gemini and OpenAI GPT-4o mini don't report the language, so with them the set in use doesn't change.
 
 > **Tip.** If Whisper keeps mangling the same word or name — a project codename, a library you use daily, a colleague's surname — stop fighting the model. Open **Preferences → Terms**, put the correct spelling in *Canonical*, and add the two or three variants Whisper tends to produce. Next time the word shows up it'll come out right without any hand-editing. That's the whole point of this feature: if you have to fix the transcript by hand every time, it's not dictation — it's a slower way to type. Teach the app once, save the corrections forever.
 
@@ -183,7 +201,7 @@ Whisper reliably recognizes common speech but routinely mangles IT terminology i
 
 **Default dictionaries.** The app ships with curated IT defaults for **Russian (~140 entries)**, **English (~110)**, and **Ukrainian (~120)** — all spanning the whole dev cycle: VCS (pull request, rebase, cherry-pick), languages (TypeScript, Swift, Rust), frontend (React, Tailwind, Next.js), UX (wireframe, mockup, accessibility), backend (endpoint, middleware, migration), data (Postgres, Redis, MongoDB), DevOps (Docker, Kubernetes, Terraform), cloud (AWS, S3, Lambda), and AI tooling (Claude, Claude Code, MCP). The first time a language's set becomes active (as the Primary language, as the detected language in Auto mode, or in the Terms editor), its bundled list is copied into your Application Support directory — from then on the file is yours.
 
-**Switching languages in the editor.** Preferences → Terms has a **Last detected** picker (top-right, styled like the General dropdowns). It defaults to the language of your most recent utterance, but you can switch it to any other language to edit that set — handy for seeding an English dictionary before you start dictating in English.
+**Switching languages in the editor.** Preferences → Terms has a **Last detected** picker (top-right, styled like the General dropdowns). It shows the set in use: with a fixed Primary language, that language; on Auto, the language of your most recent utterance, kept across launches (on the very first launch, the first of your Mac's preferred languages that has a bundled dictionary, otherwise English). You can switch it to any other language to edit that set — handy for seeding an English dictionary before you start dictating in English.
 
 **How updates work.** App updates do **not** touch your dictionary — your edits, additions, and deletions persist verbatim. To pull in new entries from the latest bundled default, open Preferences → Terms and click **Load defaults…**:
 
@@ -192,9 +210,9 @@ Whisper reliably recognizes common speech but routinely mangles IT terminology i
 
 **Adding your own terms.** Click **Add term**, put the target form in *Canonical* (`webp`), and list the variants Whisper tends to produce in *Variants* (one per line: `Веб-пи`, `вебпп`, `вепп`, `Беппи`). Matching is case-insensitive by default and respects word boundaries, so `пулреквест` won't hit inside `пулреквестер`.
 
-**Import / Export.** Pure JSON — commit it to a dotfiles repo, share with a team, seed a new machine.
+**Import / Export.** Pure JSON — commit it to a dotfiles repo, share with a team, seed a new machine. **Import…** replaces the list you're editing and asks first, saying how many terms each side has.
 
-**Storage.** `~/Library/Application Support/HoldSpeak/terminology/<lang>.json` (one file per language: `ru.json`, `en.json`, `uk.json`, …).
+**Storage.** `~/Library/Application Support/HoldSpeak/terminology/<lang>.json` (one file per language: `ru.json`, `en.json`, `uk.json`, …). If a file can't be read (say, a hand edit broke the JSON), HoldSpeak doesn't overwrite it: it renames it to `<lang>.json.unreadable-<yyyyMMdd-HHmmss>` in the same folder, starts that language from the bundled defaults (an empty list if there are none), and the Terms tab shows a notice with **Show in Finder**. If only some entries can't be read, those are skipped, the rest are kept, and the original file is kept as `<lang>.json.partial-<yyyyMMdd-HHmmss>`.
 
 ## Architecture
 
@@ -206,11 +224,11 @@ Whisper reliably recognizes common speech but routinely mangles IT terminology i
 - `Sources/UI` — SwiftUI: menu bar popover, preferences, onboarding, HUD
 - `Sources/App` — AppDelegate and entry point
 
-Transcription history is stored in a GRDB-SQLite database at `~/Library/Application Support/HoldSpeak/history.sqlite` (most recent 100 entries are kept).
+Transcription history is stored in a GRDB-SQLite database at `~/Library/Application Support/HoldSpeak/history.sqlite` (most recent 100 entries are kept). Text removed by **Clear history…** or by the 100-entry limit is overwritten in the file, not left behind in free space.
 
 ## Logs
 
-Diagnostic events go to `~/Library/Logs/HoldSpeak.log`. Useful for microphone / language detection / hotkey issues:
+Diagnostic events go to `~/Library/Logs/HoldSpeak.log`. For a dictation it records the length of the text, never the text itself, and API keys in logged server replies are replaced with `<redacted>`. Useful for microphone / language detection / hotkey issues:
 
 ```bash
 tail -f ~/Library/Logs/HoldSpeak.log
@@ -218,9 +236,27 @@ tail -f ~/Library/Logs/HoldSpeak.log
 
 ## Troubleshooting
 
+**Messages in the HUD.** When a dictation can't be transcribed or typed, the HUD pill says why; HoldSpeak doesn't post macOS notifications. Besides the cloud key and billing messages above, these are the ones you may see:
+
+| Message | What happened |
+|---|---|
+| *No microphone found* | There is no input device. Connect one, or pick one in Preferences → Audio. |
+| *Microphone couldn't start* | The input couldn't be opened. Try again, or pick another mic in Preferences → Audio. |
+| *Microphone not responding* | The audio system stopped answering and HoldSpeak reset it. Try again. |
+| *No audio captured* | You held the key but no audio arrived — usually a Bluetooth or iPhone (Continuity) mic still waking up. Try again. |
+| *Whisper couldn't transcribe* / *Parakeet couldn't transcribe* | The local model failed on this recording; the error is in the log. |
+| *Gemini took too long* / *OpenAI took too long* | The provider didn't answer in time (the wait grows with the length of the take, up to 90 s). Try again, or dictate in shorter takes. |
+| *Take too long for Gemini* / *Take too long for OpenAI* | The recording is larger than the provider accepts in one request — for Gemini, a bit over 7 minutes of speech. Dictate in shorter takes. |
+| *Gemini blocked this take* | Google's content filter withheld the transcript. |
+| *No focused input* | There was no text field to type into. The text is saved: click it in the menu bar popover to copy it. |
+| *Skipped password field* | HoldSpeak doesn't type into password fields. The text is saved in history. |
+| *Accessibility is off* | The Accessibility permission was turned off, so HoldSpeak can't type. Turn HoldSpeak on in System Settings → Privacy & Security → Accessibility. |
+
 **Hotkey doesn't fire.** Check Input Monitoring and Accessibility in System Settings → Privacy & Security. When the signature changes (e.g. a fresh ad-hoc build) TCC may drop entries — delete and re-add, or run `scripts/setup-signing.sh` and rebuild.
 
-**Recognizes silence / empty result.** Check the input level in System Settings → Sound → Input. In the logs, every dictation has a `finalize: VAD …` line with `noise=` (the level of the quietest tenth of the recording) and `peak=` (its loudest 30 ms). A `peak` of 0.02 or more always counts as speech; room noise on the built-in mic is around 0.004–0.009. `VAD dropped buffer` means no speech was found in the recording; if `peak` stays close to `noise` there, the mic is quiet (wrong device / muted / mic TCC not granted). A recording of pure zeros shows *"Microphone gave no signal"* in the HUD.
+**Recognizes silence / empty result.** Check the input level in System Settings → Sound → Input. In the logs, every dictation has a `finalize: VAD …` line with `noise=` (the level of the quietest tenth of the recording) and `peak=` (its loudest 30 ms). A `peak` of 0.02 or more is always loud enough to count as speech; room noise on the built-in mic is around 0.004–0.009. `VAD dropped buffer` means no speech was found in the recording; if `peak` stays close to `noise` there, the mic is quiet (wrong device / muted / mic TCC not granted). A recording of pure zeros shows *"Microphone gave no signal"* in the HUD.
+
+**"HoldSpeak can't open its history" at launch.** The history database is damaged or unreadable. **Start with empty history** renames the old file to `history.sqlite.broken-<yyyyMMdd-HHmmss>` in the same folder and starts a new one; **Quit** leaves everything as it is.
 
 **Confuses Ukrainian / Russian with English in auto.** Auto relies on `Locale.preferredLanguages`. Make sure the language is actually listed in System Settings → Language & Region, or switch Preferences → Audio from Auto to an explicit Russian / English.
 
@@ -230,10 +266,13 @@ You need Xcode with the macOS 26 SDK or later (the Liquid Glass code calls macOS
 
 ```bash
 xcodegen generate
-xcodebuild -scheme HoldSpeak -configuration Debug -derivedDataPath build build
+mkdir -p HoldSpeak.xcodeproj/project.xcworkspace/xcshareddata/swiftpm
+cp Xcode.resolved HoldSpeak.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved
+xcodebuild -scheme HoldSpeak -configuration Debug -derivedDataPath build \
+  -onlyUsePackageVersionsFromResolvedFile build
 ```
 
-The app ends up in `build/Build/Products/Debug/HoldSpeak.app`. `swift test` runs the unit tests in `Tests/`; the Swift package covers only `Sources/Core` (and the `Sources/ObjCCatch` helper), not the UI, the app or the engines. See [CONTRIBUTING.md](CONTRIBUTING.md) for details.
+The `cp` line and `-onlyUsePackageVersionsFromResolvedFile` build with the dependency versions in the tracked `Xcode.resolved`, as CI and the scripts do. The app ends up in `build/Build/Products/Debug/HoldSpeak.app`. `swift test` runs the unit tests in `Tests/`; the Swift package covers only `Sources/Core` (and the `Sources/ObjCCatch` helper), not the UI, the app or the engines. See [CONTRIBUTING.md](CONTRIBUTING.md) for details.
 
 Careful with `scripts/rebuild.sh`: it replaces `/Applications/HoldSpeak.app` with a Debug build, and without the `HoldSpeak Dev (self-signed)` identity that `scripts/setup-signing.sh` creates it signs the app ad hoc, so macOS forgets the permissions you granted.
 
