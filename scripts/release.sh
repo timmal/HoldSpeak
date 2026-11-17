@@ -1,10 +1,17 @@
 #!/usr/bin/env bash
 # Build a signed .app, package as DMG, create a GitHub release.
 # Usage: ./scripts/release.sh 0.2.0
+#        ./scripts/release.sh --build-only 0.2.0
 #
 # Flow: preflight (read-only; every abort happens before anything is changed)
 #       -> swift test -> version bump -> Release build -> sign -> DMG
 #       -> commit + tag -> push -> GitHub release -> relaunch the installed app.
+#
+# --build-only: the same tests, version bump, Release build, signing, signature
+# checks and DMG, leaving dist/HoldSpeak.app and the DMG to install and test by
+# hand. It then reverts the version bump. It does not need 'main', does not talk
+# to origin, commits, tags, pushes or publishes nothing, and never quits, launches
+# or replaces the installed HoldSpeak.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -16,15 +23,30 @@ die() {
   exit 1
 }
 
+usage() {
+  echo "Usage: $0 <version>                e.g. $0 0.2.0"
+  echo "       $0 --build-only <version>   build, sign and package only; publish nothing"
+}
+
 # ---------------------------------------------------------------------------
 # Preflight. Nothing below this banner, up to "End of preflight", modifies a
 # file, kills the app or changes anything on the remote.
 # ---------------------------------------------------------------------------
 
+BUILD_ONLY=0
+if [[ "${1:-}" == "--build-only" ]]; then
+  BUILD_ONLY=1
+  shift
+fi
 VERSION="${1:-}"
 if [[ -z "$VERSION" ]]; then
-  echo "Usage: $0 <version>   e.g. $0 0.2.0"
+  usage
   exit 1
+fi
+# Also catches '<version> --build-only', which must not run a real release.
+if (( $# > 1 )); then
+  usage >&2
+  die "unexpected arguments after the version: ${*:2}"
 fi
 VERSION_RE='^[0-9]+\.[0-9]+\.[0-9]+$'
 if [[ ! "$VERSION" =~ $VERSION_RE ]]; then
@@ -32,7 +54,7 @@ if [[ ! "$VERSION" =~ $VERSION_RE ]]; then
 fi
 TAG="v$VERSION"
 
-if ! command -v gh >/dev/null 2>&1; then
+if (( ! BUILD_ONLY )) && ! command -v gh >/dev/null 2>&1; then
   echo "gh CLI not found. brew install gh"
   exit 1
 fi
@@ -43,12 +65,15 @@ if [[ ! -f Xcode.resolved ]]; then
   die "Xcode.resolved (the tracked dependency lock file) is missing from the repo root."
 fi
 
-BRANCH="$(git symbolic-ref --short -q HEAD || true)"
-if [[ "$BRANCH" != "main" ]]; then
-  die "releases are cut from 'main'; current branch is '${BRANCH:-detached HEAD}'."
+if (( ! BUILD_ONLY )); then
+  BRANCH="$(git symbolic-ref --short -q HEAD || true)"
+  if [[ "$BRANCH" != "main" ]]; then
+    die "releases are cut from 'main'; current branch is '${BRANCH:-detached HEAD}'."
+  fi
 fi
 
 # Untracked files (.claude/, build leftovers) are fine; tracked edits are not.
+# --build-only needs this too: it reverts the version bump with a checkout.
 DIRTY="$(git status --porcelain --untracked-files=no)"
 if [[ -n "$DIRTY" ]]; then
   echo "release.sh: tracked files have uncommitted or staged changes; commit or discard them first:" >&2
@@ -56,9 +81,11 @@ if [[ -n "$DIRTY" ]]; then
   exit 1
 fi
 
-CURRENT_VERSION="$(/usr/bin/sed -n 's/.*MARKETING_VERSION: "\(.*\)".*/\1/p' project.yml)"
-if [[ "$CURRENT_VERSION" == "$VERSION" ]]; then
-  die "project.yml is already at $VERSION; there is no version bump to release."
+if (( ! BUILD_ONLY )); then
+  CURRENT_VERSION="$(/usr/bin/sed -n 's/.*MARKETING_VERSION: "\(.*\)".*/\1/p' project.yml)"
+  if [[ "$CURRENT_VERSION" == "$VERSION" ]]; then
+    die "project.yml is already at $VERSION; there is no version bump to release."
+  fi
 fi
 
 # An ad-hoc signature changes the app's designated requirement, so every user
@@ -69,33 +96,45 @@ if ! grep -qF "$IDENTITY" <<<"$IDENTITIES"; then
   die "signing identity '$IDENTITY' not found in the login keychain. Run scripts/setup-signing.sh once, then retry. Refusing to publish an ad-hoc signed release: users would lose their Microphone / Accessibility / Input Monitoring grants."
 fi
 
-if ! git fetch --quiet origin; then
-  die "git fetch origin failed; cannot compare main and tags with origin."
-fi
+if (( BUILD_ONLY )); then
+  # The build never touches the installed app, so a running HoldSpeak is fine —
+  # unless it runs from this checkout's build/ or dist/, which the build deletes.
+  for PID in $(pgrep -x HoldSpeak || true); do
+    EXE="$(ps -o comm= -p "$PID" 2>/dev/null || true)"
+    case "$EXE" in
+      "$PWD"/build/* | "$PWD"/dist/*)
+        die "HoldSpeak (pid $PID) is running from $EXE, which this build deletes; quit it first." ;;
+    esac
+  done
+else
+  if ! git fetch --quiet origin; then
+    die "git fetch origin failed; cannot compare main and tags with origin."
+  fi
 
-if git rev-parse -q --verify "refs/tags/$TAG" >/dev/null; then
-  die "tag $TAG already exists locally."
-fi
-if ! REMOTE_TAG="$(git ls-remote --tags origin "refs/tags/$TAG")"; then
-  die "could not list tags on origin."
-fi
-if [[ -n "$REMOTE_TAG" ]]; then
-  die "tag $TAG already exists on origin."
-fi
+  if git rev-parse -q --verify "refs/tags/$TAG" >/dev/null; then
+    die "tag $TAG already exists locally."
+  fi
+  if ! REMOTE_TAG="$(git ls-remote --tags origin "refs/tags/$TAG")"; then
+    die "could not list tags on origin."
+  fi
+  if [[ -n "$REMOTE_TAG" ]]; then
+    die "tag $TAG already exists on origin."
+  fi
 
-if ! git rev-parse -q --verify refs/remotes/origin/main >/dev/null; then
-  die "origin/main not found after fetch."
-fi
-BEHIND="$(git rev-list --count HEAD..origin/main)"
-AHEAD="$(git rev-list --count origin/main..HEAD)"
-if (( BEHIND > 0 && AHEAD > 0 )); then
-  die "local main has diverged from origin/main ($AHEAD ahead, $BEHIND behind). Reconcile them first."
-fi
-if (( BEHIND > 0 )); then
-  die "local main is $BEHIND commit(s) behind origin/main. Run 'git pull --ff-only' first."
-fi
-if (( AHEAD > 0 )); then
-  echo "Note: $AHEAD unpushed commit(s) on main will be pushed with this release."
+  if ! git rev-parse -q --verify refs/remotes/origin/main >/dev/null; then
+    die "origin/main not found after fetch."
+  fi
+  BEHIND="$(git rev-list --count HEAD..origin/main)"
+  AHEAD="$(git rev-list --count origin/main..HEAD)"
+  if (( BEHIND > 0 && AHEAD > 0 )); then
+    die "local main has diverged from origin/main ($AHEAD ahead, $BEHIND behind). Reconcile them first."
+  fi
+  if (( BEHIND > 0 )); then
+    die "local main is $BEHIND commit(s) behind origin/main. Run 'git pull --ff-only' first."
+  fi
+  if (( AHEAD > 0 )); then
+    echo "Note: $AHEAD unpushed commit(s) on main will be pushed with this release."
+  fi
 fi
 
 # ---------------------------------------------------------------------------
@@ -116,11 +155,15 @@ fi
 
 # From here on the script changes things. On failure: undo an uncommitted
 # version bump (so the next run passes the clean-tree check) and bring the app
-# back if we killed it.
+# back if we killed it. --build-only also undoes the bump on success.
 STAGE="version bump"
 BUMP_PENDING=0
 RELEASE_COMMITTED=0
 APP_KILLED=0
+
+revert_bump() {
+  git checkout -q HEAD -- project.yml Resources/Info.plist
+}
 
 on_exit() {
   local status=$?
@@ -131,7 +174,7 @@ on_exit() {
   echo >&2
   echo "release.sh: FAILED (exit $status) during: $STAGE" >&2
   if (( BUMP_PENDING )); then
-    if git checkout -q HEAD -- project.yml Resources/Info.plist; then
+    if revert_bump; then
       echo "release.sh: reverted the uncommitted version bump in project.yml and Resources/Info.plist." >&2
     else
       echo "release.sh: could not revert the version bump; run: git checkout HEAD -- project.yml Resources/Info.plist" >&2
@@ -176,7 +219,9 @@ mkdir -p HoldSpeak.xcodeproj/project.xcworkspace/xcshareddata/swiftpm
 cp Xcode.resolved HoldSpeak.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved
 
 STAGE="build"
-if pkill -x HoldSpeak 2>/dev/null; then
+# Quit only so the end of a real release can relaunch the new install; the build
+# itself does not need it. --build-only leaves the running app alone.
+if (( ! BUILD_ONLY )) && pkill -x HoldSpeak 2>/dev/null; then
   APP_KILLED=1
 fi
 chmod -R u+w build dist 2>/dev/null || true
@@ -234,6 +279,23 @@ hdiutil create -volname "HoldSpeak $VERSION" \
   -ov -format UDZO "$DMG"
 
 rm -rf "$STAGING"
+
+if (( BUILD_ONLY )); then
+  STAGE="reverting the version bump"
+  revert_bump
+  BUMP_PENDING=0
+  echo
+  echo "Built HoldSpeak $VERSION (not released; the version bump is reverted)."
+  echo "App: dist/HoldSpeak.app"
+  echo "DMG: $DMG"
+  codesign -d -vv "$APP" 2>&1 | grep 'flags=' || true
+  echo
+  echo "To install it by hand:"
+  echo "  pkill -x HoldSpeak"
+  echo "  rm -rf \"$INSTALLED_APP\" && cp -R \"$PWD/dist/HoldSpeak.app\" \"$INSTALLED_APP\""
+  echo "  open \"$INSTALLED_APP\""
+  exit 0
+fi
 
 # Commit version bump (project.yml and the Info.plist xcodegen regenerated from it)
 STAGE="release commit"
