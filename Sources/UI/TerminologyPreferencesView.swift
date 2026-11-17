@@ -35,6 +35,9 @@ struct TerminologyPreferencesView: View {
             header
             footer
             searchField
+            if let notice = store.fileNotices[store.activeLanguage] {
+                fileNoticeBanner(notice)
+            }
             ScrollViewReader { proxy in
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 6) {
@@ -166,6 +169,66 @@ struct TerminologyPreferencesView: View {
             .padding(.vertical, 8)
     }
 
+    // MARK: - Damaged file notice
+
+    private func fileNoticeBanner(_ notice: TerminologyFileNotice) -> some View {
+        HStack(alignment: .center, spacing: 10) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .font(.system(size: 12))
+                .foregroundColor(PTT.trendDown(scheme))
+            VStack(alignment: .leading, spacing: 2) {
+                Text(Self.noticeHeadline(notice))
+                    .font(.system(size: 12))
+                    .foregroundColor(PTT.textBody(scheme))
+                Text(Self.noticeDetail(notice))
+                    .font(.system(size: 11))
+                    .foregroundColor(PTT.textSoft(scheme))
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .help(notice.reason)
+            }
+            Spacer(minLength: 0)
+            if let backup = notice.backupURL {
+                Button { NSWorkspace.shared.activateFileViewerSelecting([backup]) } label: {
+                    pillText("Show in Finder")
+                }.pttButton()
+            }
+            Button { store.dismissFileNotice(for: notice.language) } label: {
+                Image(systemName: "xmark")
+                    .font(.system(size: 11))
+                    .foregroundColor(PTT.textMuted(scheme))
+            }
+            .buttonStyle(.plain)
+            .help("Dismiss")
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(RoundedRectangle(cornerRadius: 8).fill(PTT.trendDown(scheme).opacity(0.10)))
+    }
+
+    private static func noticeHeadline(_ notice: TerminologyFileNotice) -> String {
+        switch notice.kind {
+        case .unreadable:
+            return notice.backupURL == nil
+                ? "Couldn't read \(notice.fileName)."
+                : "Couldn't read \(notice.fileName), so this list was reset."
+        case .partial(let skipped):
+            return "Skipped \(countLabel(skipped, "entry", "entries")) in \(notice.fileName) that couldn't be read."
+        }
+    }
+
+    private static func noticeDetail(_ notice: TerminologyFileNotice) -> String {
+        let saved = notice.backupFileName.map { "Original saved as \($0)." } ?? "The file was left in place."
+        switch notice.kind {
+        case .unreadable: return "\(saved) \(notice.reason)"
+        case .partial:    return saved
+        }
+    }
+
+    private static func countLabel(_ n: Int, _ one: String, _ many: String) -> String {
+        "\(n) \(n == 1 ? one : many)"
+    }
+
     private func row(_ entry: TerminologyEntry) -> some View {
         HStack(spacing: 10) {
             VStack(alignment: .leading, spacing: 2) {
@@ -252,11 +315,32 @@ struct TerminologyPreferencesView: View {
         let panel = NSOpenPanel()
         panel.allowedContentTypes = [.json]
         panel.allowsMultipleSelection = false
-        guard panel.runModal() == .OK, let url = panel.url,
-              let data = try? Data(contentsOf: url),
-              let entries = try? JSONDecoder().decode([TerminologyEntry].self, from: data)
-        else { return }
-        store.replaceAll(entries)
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        let name = url.lastPathComponent
+
+        let result: TerminologyDecodeResult
+        do {
+            result = try TerminologyStore.decodeLenient(Data(contentsOf: url))
+        } catch {
+            let alert = NSAlert()
+            alert.alertStyle = .warning
+            alert.messageText = "Couldn't import \(name)"
+            alert.informativeText = TerminologyStore.describe(error)
+            alert.runModal()
+            return
+        }
+
+        let current = Self.countLabel(store.entries.count, "term", "terms")
+        let incoming = Self.countLabel(result.entries.count, "term", "terms")
+        let confirm = NSAlert()
+        confirm.messageText = "Replace \(current) with \(incoming) from \(name)?"
+        confirm.informativeText = result.skipped > 0
+            ? "\(Self.countLabel(result.skipped, "entry", "entries")) couldn't be read and will be skipped."
+            : "Your current list will be discarded."
+        confirm.addButton(withTitle: "Replace")
+        confirm.addButton(withTitle: "Cancel")
+        guard confirm.runModal() == .alertFirstButtonReturn else { return }
+        store.replaceAll(result.entries)
     }
 
     private func exportJSON() {
