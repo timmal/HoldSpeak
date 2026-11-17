@@ -30,7 +30,7 @@ final class ModelsViewModel: ObservableObject {
             }
             onDownloaded?(model)
         } catch {
-            NSLog("Model download failed: \(error)")
+            NSLog("%@", "Model download failed: \(error)")
         }
         refreshManagedSize()
     }
