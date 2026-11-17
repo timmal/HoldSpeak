@@ -32,7 +32,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         do {
             store = try HistoryStore(url: HistoryStore.defaultURL())
         } catch {
-            NSLog("Failed to open history DB: \(error)")
+            NSLog("%@", "Failed to open history DB: \(error)")
             NSApp.terminate(nil)
             return
         }

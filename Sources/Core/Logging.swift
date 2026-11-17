@@ -9,7 +9,7 @@ private let logMaxBytes: UInt64 = 2 * 1024 * 1024
 private var logHandle: FileHandle?
 
 public func pttLog(_ msg: String) {
-    NSLog("[PTT] \(msg)")
+    NSLog("%@", "[PTT] \(msg)")
     let line = "\(Date()) \(msg)\n"
     logQueue.async {
         guard let data = line.data(using: .utf8), let fh = openLogHandle() else { return }
