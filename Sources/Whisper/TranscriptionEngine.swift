@@ -94,7 +94,9 @@ public final class TranscriptionEngine {
                           failure: TranscriptionFailure) async -> TranscriptionResult {
         let prefs = PreferencesStore.shared
         var offline = failure.isOffline
-        for provider in EngineFallback.cloudBackups(after: selected, hasKey: prefs.hasAPIKey) where !offline {
+        // The selected engine's `apiKey` has already waited for the keys to load (off
+        // main), so the loaded keys are the whole answer; this runs on the main actor.
+        for provider in EngineFallback.cloudBackups(after: selected, hasKey: prefs.hasLoadedAPIKey) where !offline {
             pttLog("fallback: \(selected.rawValue) failed (\(failure)), trying \(provider.rawValue)")
             switch await transcribe(trimmed, durationMs: durationMs, with: provider) {
             case .text(let text, let language, let ms, let engine, _):

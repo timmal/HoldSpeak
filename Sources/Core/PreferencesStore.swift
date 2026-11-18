@@ -218,8 +218,10 @@ public final class PreferencesStore: ObservableObject {
     private let apiKeys = APIKeyStore(keychain: SystemKeychain())
 
     /// nil when there is no key, or when Keychain access was denied (`apiKeysUnavailable`).
-    public func apiKey(_ provider: CloudProvider) -> String? {
-        apiKeys.key(provider)
+    /// Reads the Keychain the first time, off the calling thread: a dictation waits for
+    /// the password prompt without blocking the main run loop (and the event tap on it).
+    public func apiKey(_ provider: CloudProvider) async -> String? {
+        await apiKeys.keyLoadingInBackground(provider)
     }
 
     /// nil or empty removes the key. False when nothing was saved.
@@ -229,7 +231,13 @@ public final class PreferencesStore: ObservableObject {
         return apiKeys.setKey(key, for: provider)
     }
 
-    public func hasAPIKey(_ provider: CloudProvider) -> Bool { apiKey(provider)?.isEmpty == false }
+    /// A key is saved for `provider`, as far as the keys already read from the Keychain
+    /// tell: false until `warmAPIKeys` has finished. Never reads the Keychain and never
+    /// waits, so this is the one to use in view bodies; call `warmAPIKeys()` from the
+    /// view when a cloud engine is shown, and it re-renders when the keys are in.
+    public func hasLoadedAPIKey(_ provider: CloudProvider) -> Bool {
+        apiKeys.loadedKey(provider)?.isEmpty == false
+    }
 
     public var apiKeyAvailability: APIKeyStore.Availability { apiKeys.availability }
 

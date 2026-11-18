@@ -314,6 +314,98 @@ final class APIKeyStoreTests: XCTestCase {
         XCTAssertEqual(keychain.readsOnMain, [false, false])
     }
 
+    // MARK: Non-blocking reads (HS-54)
+
+    func test_loadedKey_notLoaded_neverTouchesTheKeychain() {
+        keychain.storeKeys(["gemini": "g-key"])
+        XCTAssertNil(store.loadedKey(.gemini))
+        XCTAssertNil(store.loadedKey(.openai))
+        XCTAssertTrue(keychain.reads.isEmpty, "a view body must never raise the password prompt")
+        XCTAssertEqual(store.availability, .notLoaded)
+    }
+
+    func test_loadedKey_whileLoading_returnsAtOnceThenTheKey() {
+        keychain.storeKeys(["gemini": "g-key"])
+        let gate = DispatchSemaphore(value: 0)
+        keychain.gate = gate
+        let done = expectation(description: "loaded")
+        store.loadInBackground(retry: false) { _ in done.fulfill() }
+        XCTAssertEqual(keychain.readStarted.wait(timeout: .now() + 5), .success)
+        XCTAssertEqual(store.availability, .loading)
+
+        // The prompt is still up: answered at once, without waiting for it. A wait here
+        // would hang this test, since the gate opens only below.
+        XCTAssertNil(store.loadedKey(.gemini))
+
+        keychain.gate = nil
+        gate.signal()
+        wait(for: [done], timeout: 5)
+        XCTAssertEqual(store.loadedKey(.gemini), "g-key")
+        XCTAssertNil(store.loadedKey(.openai))
+        XCTAssertEqual(keychain.reads.count, 1)
+    }
+
+    func test_loadedKey_deniedRead_isNilWithoutRetrying() {
+        keychain.storeKeys(["gemini": "g-key"])
+        keychain.failAllReads = errSecUserCanceled
+        XCTAssertNil(store.key(.gemini))
+        XCTAssertNil(store.loadedKey(.gemini))
+        XCTAssertEqual(keychain.reads.count, 1)
+    }
+
+    func test_keyLoadingInBackground_readsOffMainAndServesTheKey() {
+        keychain.storeKeys(["gemini": "g-key"])
+        let gate = DispatchSemaphore(value: 0)
+        keychain.gate = gate
+        let readStarted = expectation(description: "read started")
+        DispatchQueue.global().async {
+            if self.keychain.readStarted.wait(timeout: .now() + 5) == .success { readStarted.fulfill() }
+        }
+        // A dictation asks from the main actor, as the transcribers do.
+        let served = expectation(description: "key served")
+        Task { @MainActor in
+            let key = await self.store.keyLoadingInBackground(.gemini)
+            XCTAssertEqual(key, "g-key")
+            served.fulfill()
+        }
+        // The task runs on main during this wait. That the wait returns, with the prompt
+        // still unanswered, shows the main-actor caller suspended instead of blocking main.
+        wait(for: [readStarted], timeout: 5)
+        XCTAssertEqual(store.availability, .loading)
+        XCTAssertNil(store.loadedKey(.gemini))
+
+        keychain.gate = nil
+        gate.signal()
+        wait(for: [served], timeout: 5)
+        XCTAssertEqual(keychain.readsOnMain, [false])
+
+        // Loaded: served from memory, no second read.
+        let again = expectation(description: "served again")
+        Task { @MainActor in
+            let key = await self.store.keyLoadingInBackground(.gemini)
+            XCTAssertEqual(key, "g-key")
+            again.fulfill()
+        }
+        wait(for: [again], timeout: 5)
+        XCTAssertEqual(keychain.reads.count, 1)
+    }
+
+    func test_keyLoadingInBackground_deniedRead_doesNotPromptAgain() {
+        keychain.storeKeys(["gemini": "g-key"])
+        keychain.failAllReads = errSecUserCanceled
+        for _ in 0..<2 {
+            let served = expectation(description: "answered")
+            Task { @MainActor in
+                let key = await self.store.keyLoadingInBackground(.gemini)
+                XCTAssertNil(key)
+                served.fulfill()
+            }
+            wait(for: [served], timeout: 5)
+        }
+        XCTAssertEqual(keychain.reads.count, 1)
+        XCTAssertEqual(store.availability, .unavailable)
+    }
+
     func test_mergedItemWins_legacyItemsIgnored() {
         keychain.storeKeys(["gemini": "g-key"])
         keychain.items["openai-api-key"] = "stale"

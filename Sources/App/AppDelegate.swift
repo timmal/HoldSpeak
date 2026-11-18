@@ -366,7 +366,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if engineChanged {
             appliedEngine = prefs.engine
             pttLog("Engine switched to \(prefs.engine.rawValue)")
-            if !prefs.engine.isLocal { engine.unloadLocal() }
+            if !prefs.engine.isLocal {
+                engine.unloadLocal()
+                // Ask for Keychain access now, off main, not inside the first dictation.
+                prefs.warmAPIKeys()
+            }
         }
         guard prefs.engine.isLocal else { return }
         let model = prefs.localModel

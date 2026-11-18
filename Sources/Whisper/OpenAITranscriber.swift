@@ -8,7 +8,7 @@ final class OpenAITranscriber {
 
     func transcribe(_ trimmed: [Float], durationMs: Int) async -> TranscriptionResult {
         let prefs = PreferencesStore.shared
-        guard let apiKey = prefs.apiKey(.openai), !apiKey.isEmpty else {
+        guard let apiKey = await prefs.apiKey(.openai), !apiKey.isEmpty else {
             pttLog("finalize: no OpenAI API key")
             return .failed(.missingAPIKey(.openai))
         }
