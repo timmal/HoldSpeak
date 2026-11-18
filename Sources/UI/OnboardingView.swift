@@ -87,7 +87,9 @@ struct OnboardingView: View {
                     refresh()
                     if perms.allGranted { onDone() } else { step = .permissions }
                 }
-                .disabled(choice.cloudProvider.map { !prefs.hasAPIKey($0) } ?? false)
+                // Only keys already read, never the Keychain on main: disabled while they
+                // load. The APIKeyEditor above warms them as soon as a cloud engine is picked.
+                .disabled(choice.cloudProvider.map { !prefs.hasLoadedAPIKey($0) } ?? false)
                 .keyboardShortcut(.defaultAction)
                 .modifier(PrimaryOnGlass())
             }

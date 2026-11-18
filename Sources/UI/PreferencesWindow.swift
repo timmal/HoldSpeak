@@ -342,7 +342,9 @@ struct PreferencesView: View {
     }
 
     @ViewBuilder private func engineFallbackToggle(_ provider: CloudProvider) -> some View {
-        let backups = EngineFallback.cloudBackups(after: provider, hasKey: prefs.hasAPIKey)
+        // Only keys already read: a Keychain read here would block main on the password
+        // prompt. Backups show up once `warmAPIKeys` (onAppear below) has finished.
+        let backups = EngineFallback.cloudBackups(after: provider, hasKey: prefs.hasLoadedAPIKey)
         let local = prefs.localModel
         let chain = (backups.map(\.name) + ["\(local.shortLabel) on this Mac"]).joined(separator: ", then to ")
         VStack(alignment: .leading, spacing: 6) {
@@ -378,6 +380,8 @@ struct PreferencesView: View {
                 }
             }
         }
+        // Shown only with a cloud engine selected, so a local-engine user is never asked.
+        .onAppear { prefs.warmAPIKeys() }
     }
 
     private func confirmDeleteModels() {

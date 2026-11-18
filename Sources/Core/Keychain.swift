@@ -147,6 +147,31 @@ public final class APIKeyStore: @unchecked Sendable {
         return state == .loaded ? keys[provider.rawValue] : nil
     }
 
+    /// The key if the keys are already loaded, else nil, also while a read is running.
+    /// Never reads the Keychain and never waits: the one to use on the main thread,
+    /// e.g. in a SwiftUI view body. Pair it with `loadInBackground` so the view is
+    /// refreshed once the keys are in.
+    public func loadedKey(_ provider: CloudProvider) -> String? {
+        condition.lock(); defer { condition.unlock() }
+        return state == .loaded ? keys[provider.rawValue] : nil
+    }
+
+    /// Like `key`, but the Keychain read, or the wait for one already running, happens
+    /// off the calling thread: a caller on the main actor is suspended, not blocked, while
+    /// a password prompt is up. Doesn't prompt again after a failed read.
+    public func keyLoadingInBackground(_ provider: CloudProvider) async -> String? {
+        condition.lock()
+        if state == .loaded {
+            defer { condition.unlock() }
+            return keys[provider.rawValue]
+        }
+        condition.unlock()
+        await withCheckedContinuation { (done: CheckedContinuation<Void, Never>) in
+            loadInBackground(retry: false) { _ in done.resume() }
+        }
+        return loadedKey(provider)
+    }
+
     /// Reads the Keychain again unless the keys are already loaded.
     @discardableResult
     public func reload() -> Availability {
@@ -206,6 +231,11 @@ public final class APIKeyStore: @unchecked Sendable {
 
     /// Called and returns with the lock held; releases it while the Keychain is read.
     private func loadIfNeeded(retry: Bool) {
+        // Waiting on a running read is as bad as reading: either way the main run loop,
+        // and the event tap on it, stalls while a password prompt is up (HS-54).
+        if Thread.isMainThread, state == .loading || Self.needsLoad(state, retry: retry) {
+            pttLog("APIKeyStore: Keychain \(state == .loading ? "wait" : "read") on the main thread")
+        }
         while state == .loading { condition.wait() }
         guard Self.needsLoad(state, retry: retry) else { return }
         state = .loading

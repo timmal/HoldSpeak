@@ -74,7 +74,7 @@ struct APIKeyEditor: View {
     }
 
     /// Never reads the Keychain on main: until `warmAPIKeys` is done the view says so.
-    private var hasKey: Bool { !keysLoading && prefs.hasAPIKey(provider) }
+    private var hasKey: Bool { prefs.hasLoadedAPIKey(provider) }
     private var keysLoading: Bool {
         let availability = prefs.apiKeyAvailability
         return availability == .notLoaded || availability == .loading
@@ -165,6 +165,12 @@ struct APIKeyEditor: View {
     /// denied nothing is written and the status line says so; the draft stays.
     @discardableResult
     private func store(_ key: String?) -> Bool {
+        // Unless the keys are loaded, saving would read the Keychain again here on main
+        // and block it on the password prompt: "Try again" asks off main instead.
+        guard prefs.apiKeyAvailability == .loaded else {
+            check = .idle
+            return false
+        }
         let saved = prefs.setAPIKey(key, for: provider)
         check = saved || prefs.apiKeysUnavailable ? .idle : .saveFailed
         return saved

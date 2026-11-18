@@ -8,7 +8,7 @@ final class GeminiTranscriber {
 
     func transcribe(_ trimmed: [Float], durationMs: Int) async -> TranscriptionResult {
         let prefs = PreferencesStore.shared
-        guard let apiKey = prefs.apiKey(.gemini), !apiKey.isEmpty else {
+        guard let apiKey = await prefs.apiKey(.gemini), !apiKey.isEmpty else {
             pttLog("finalize: no Gemini API key")
             return .failed(.missingAPIKey(.gemini))
         }
